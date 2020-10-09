@@ -18,7 +18,7 @@ func Test_GitHub(t *testing.T) {
 		Token:  cred.Password,
 	}
 
-	repos, err := sat.OrgRepos("golang")
+	repos, err := sat.SearchForRepositories("org:bloomberg")
 
 	t.Logf("err: %+v", err)
 	t.Logf("repos: %+v ...", repos[0:10])

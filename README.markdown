@@ -29,14 +29,8 @@ $ frond do git pull --prune
 ## Sync
 
 ```console
-$ frond sync init github.com
-Created frond.yaml.
-
-$ frond sync exclude org/repo-to-avoid
-Will exclude repository org/repo-to-avoid.
-
-$ frond sync exclude archived
-Will exclude archived repositories.
+$ frond sync init github.com "org:bloomberg language:go"
+Created frond.sync.yaml.
 
 $ frond sync
 Downloading...

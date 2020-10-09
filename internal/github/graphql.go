@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"sort"
 )
 
 func graphQLQuery() {
@@ -75,9 +76,82 @@ func (sat *ServerAndToken) graphQuery(query string, variables interface{}, data 
 		return fmt.Errorf("%+v", *doe.Errors)
 	}
 
+	// fmt.Printf("DATA BODY:\n%s\n", *doe.Data)
+
 	return json.Unmarshal(*doe.Data, &data)
 }
 
+// https://docs.github.com/en/free-pro-team@latest/github/searching-for-information-on-github/understanding-the-search-syntax
+// https://docs.github.com/en/free-pro-team@latest/github/searching-for-information-on-github/searching-for-repositories
+
+func (sat *ServerAndToken) SearchForRepositories(searchQuery string) ([]string, error) {
+	const query = `
+		query($searchQuery: String!, $batchSize: Int!, $prevEndCursor: String) {
+			search(query: $searchQuery, type: REPOSITORY, after: $prevEndCursor, first: $batchSize) {
+				nodes {
+					... on Repository {
+						nameWithOwner
+					}
+				}
+				pageInfo {
+					endCursor
+					hasNextPage
+				}
+			}
+		}
+    `
+
+	vars := map[string]interface{}{
+		"searchQuery": searchQuery,
+		"batchSize":   30,
+	}
+
+	type repository struct {
+		NameWithOwner string `json:"nameWithOwner"`
+	}
+
+	type pageInfo struct {
+		EndCursor   string `json:"endCursor"`
+		HasNextPage bool   `json:"hasNextPage"`
+	}
+
+	type search struct {
+		Repos    []repository `json:"nodes"`
+		PageInfo pageInfo     `json:"pageInfo"`
+	}
+
+	type data struct {
+		Search search `json:"search"`
+	}
+
+	var repos []string
+
+	for {
+		var data data
+
+		if err := sat.graphQuery(query, vars, &data); err != nil {
+			return nil, err
+		}
+
+		// fmt.Printf("data: %+v\n", data)
+
+		for _, r := range data.Search.Repos {
+			repos = append(repos, r.NameWithOwner)
+		}
+
+		if !data.Search.PageInfo.HasNextPage {
+			sort.Strings(repos)
+			return repos, nil
+		}
+
+		vars["prevEndCursor"] = data.Search.PageInfo.EndCursor
+	}
+
+	panic("should not get here")
+}
+
+// TODO
+/*
 func (sat *ServerAndToken) OrgRepos(org string) ([]string, error) {
 	const query = `
       query($org: String!, $prevEndCursor: String) {
@@ -146,3 +220,4 @@ func (sat *ServerAndToken) OrgRepos(org string) ([]string, error) {
 
 	panic("should not get here")
 }
+*/

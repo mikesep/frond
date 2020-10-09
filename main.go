@@ -7,30 +7,13 @@ import (
 	"github.com/jessevdk/go-flags"
 )
 
-/*
-frond list
-frond status
-frond stashed
-
-frond branch
-  match regexp
-frond pull
-frond sync (clone and warn/delete)
-frond pr
-frond do pwd
-
-config
-- list orgs
-  - exclude a repo
-
-*/
-
 type rootOptions struct {
 	Status statusOptions `command:"status"`
 	Branch branchOptions `command:"branch"`
 	List   listOptions   `command:"list" alias:"ls"`
+	Sync   syncOptions   `command:"sync" subcommands-optional:"true"`
 
-	Jobs int `short:"j" long:"jobs" value-name:"N" description:"number of jobs to run in parallel"`
+	Jobs int `short:"j" long:"jobs" value-name:"N" description:"Number of jobs to run in parallel"`
 
 	//ConfigPath string `long:"config" env-var:"FROND_CONFIG" default:"frond.json" description:"path to frond config"`
 }
@@ -43,6 +26,7 @@ func run(args []string) int {
 	var opts rootOptions
 	opts.Status.rootOpts = &opts
 	opts.Branch.rootOpts = &opts
+	opts.Sync.setRootOpts(&opts)
 
 	parser := flags.NewParser(&opts, flags.Default)
 	_, err := parser.ParseArgs(args)
