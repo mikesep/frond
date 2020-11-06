@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"sort"
 )
 
 func graphQLQuery() {
@@ -140,7 +139,6 @@ func (sat *ServerAndToken) SearchForRepositories(searchQuery string) ([]string, 
 		}
 
 		if !data.Search.PageInfo.HasNextPage {
-			sort.Strings(repos)
 			return repos, nil
 		}
 

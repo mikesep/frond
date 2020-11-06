@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/mikesep/frond/internal/git"
 	"github.com/mikesep/frond/internal/github"
@@ -42,16 +43,85 @@ func syncGitHub(cfg syncConfigGitHub) error {
 		return err
 	}
 
-	sat := github.ServerAndToken{
+	ghSAT := github.ServerAndToken{
 		Server: cfg.Server,
 		Token:  cred.Password,
 	}
 
-	repos, err := sat.SearchForRepositories(cfg.SearchQuery)
+	localRepos, err := findRepos(".")
+	if err != nil {
+		return err
+	}
+	fmt.Printf("DEBUG: local repos: %d\n", len(localRepos))
 
-	fmt.Println("SYNC")
-	fmt.Printf("ERR:   %v\n", err)
-	fmt.Printf("REPOS: %v\n", repos)
+	remoteRepos, err := ghSAT.SearchForRepositories(cfg.SearchQuery)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("DEBUG: remote repos in %s %q: %d\n", cfg.Server, cfg.SearchQuery, len(remoteRepos))
 
-	return err
+	sort.Strings(localRepos)
+	sort.Strings(remoteRepos)
+
+	matchingRepos, missingRepos, extraRepos := diffLocalAndRemoteRepos(localRepos, remoteRepos)
+
+	if len(extraRepos) > 0 {
+		repoOrRepos := "repo"
+		if len(extraRepos) > 1 {
+			repoOrRepos = "repos"
+		}
+		fmt.Printf("Found %d local %s that didn't match the search.\n", len(extraRepos), repoOrRepos)
+		fmt.Printf("To remove the extra %s, run 'frond sync prune' or 'frond sync --prune'.\n",
+			repoOrRepos)
+	}
+
+	return nil
+}
+
+// The slices must be sorted!
+func diffLocalAndRemoteRepos(localRepos, remoteRepos []string) (
+	matching, missing, extra []string,
+) {
+	if !sort.StringsAreSorted(localRepos) {
+		panic("localRepos slice is not sorted")
+	}
+	if !sort.StringsAreSorted(remoteRepos) {
+		panic("remoteRepos slice is not sorted")
+	}
+
+	var localIndex, remoteIndex int
+
+	for localIndex < len(localRepos) && remoteIndex < len(remoteRepos) {
+		var local *string
+		if localIndex < len(localRepos) {
+			local = &localRepos[localIndex]
+		}
+
+		var remote *string
+		if remoteIndex < len(remoteRepos) {
+			remote = &remoteRepos[remoteIndex]
+		}
+
+		// fmt.Printf("local=%q remote=%q\n", local, remote)
+
+		switch {
+		case local == nil || remote != nil && *remote < *local:
+			// remote repo that is missing
+			missing = append(missing, *remote)
+			remoteIndex++
+
+		case remote == nil || local != nil && *local < *remote:
+			// local repo that isn't in remote list
+			extra = append(extra, *local)
+			localIndex++
+
+		default:
+			// local repo that is in remote list
+			matching = append(matching, *local)
+			localIndex++
+			remoteIndex++
+		}
+	}
+
+	return matching, missing, extra, nil
 }

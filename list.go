@@ -12,9 +12,14 @@ type listOptions struct {
 }
 
 func (opts *listOptions) Execute(args []string) error {
-	repos, err := listRepos(args)
+	// repos, err := listRepos(args)
+	repos, err := findRepos(".")
 	if err != nil {
 		return err
+	}
+
+	if len(repos) == 0 {
+		return nil
 	}
 
 	maxRepoLen := maxLength(repos)
