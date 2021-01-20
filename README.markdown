@@ -28,6 +28,27 @@ $ frond do git pull --prune
 
 ## Sync
 
+### Single org/user
+
+```console
+$ frond sync init github.com/bloomberg
+Created frond.sync.yaml.
+```
+
+### Multi-org/user
+
+```console
+$ frond sync init github.com/apache,bloomberg,containers
+$ frond sync init github.com apache bloomberg containers
+$ frond sync init github.com --orgs=apache,bloomberg,containers
+$ frond sync init github.com apache,bloomberg,containers
+
+$ frond sync init gitlab.com/bloomberg
+$ frond sync init gitlab.com/bloomberg/bst
+```
+
+---
+
 ```console
 $ frond sync init github.com "org:bloomberg language:go"
 Created frond.sync.yaml.
