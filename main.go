@@ -5,13 +5,14 @@ import (
 	"os"
 
 	"github.com/jessevdk/go-flags"
+	"github.com/mikesep/frond/internal/sync"
 )
 
 type rootOptions struct {
 	Status statusOptions `command:"status"`
 	Branch branchOptions `command:"branch"`
 	List   listOptions   `command:"list" alias:"ls"`
-	Sync   syncOptions   `command:"sync" subcommands-optional:"true"`
+	Sync   sync.Options  `command:"sync" subcommands-optional:"true"`
 
 	Jobs int `short:"j" long:"jobs" value-name:"N" description:"Number of jobs to run in parallel"`
 
@@ -24,9 +25,6 @@ func main() {
 
 func run(args []string) int {
 	var opts rootOptions
-	opts.Status.rootOpts = &opts
-	opts.Branch.rootOpts = &opts
-	opts.Sync.setRootOpts(&opts)
 
 	parser := flags.NewParser(&opts, flags.Default)
 	_, err := parser.ParseArgs(args)

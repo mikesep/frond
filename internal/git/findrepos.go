@@ -1,12 +1,12 @@
-package main
+package git
 
 import (
 	"os"
 	"path/filepath"
 )
 
-func findRepos(root string) ([]string, error) {
-	var repos []string
+func FindReposInDir(root string) ([]*LocalRepo, error) {
+	var repos []*LocalRepo
 
 	dirQueue := []string{root}
 
@@ -27,12 +27,9 @@ func findRepos(root string) ([]string, error) {
 		for _, fi := range dirInfos {
 			if fi.IsDir() {
 				fiPath := filepath.Join(dirPath, fi.Name())
-				isRepo, err := isGitRepo(fiPath)
-				if err != nil {
-					return nil, err
-				}
-				if isRepo {
-					repos = append(repos, fiPath)
+				repo, err := NewLocalRepoAtDir(fiPath)
+				if err == nil {
+					repos = append(repos, repo)
 				} else {
 					dirQueue = append(dirQueue, fiPath)
 				}
@@ -41,16 +38,4 @@ func findRepos(root string) ([]string, error) {
 	}
 
 	return repos, nil
-}
-
-func isGitRepo(dir string) (bool, error) {
-	info, err := os.Stat(filepath.Join(dir, ".git"))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return false, nil
-		}
-		return false, err
-	}
-
-	return info.IsDir(), nil
 }

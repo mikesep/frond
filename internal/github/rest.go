@@ -23,6 +23,7 @@ type Repo struct {
 	Name     string    `json:"name"`
 	FullName string    `json:"full_name"`
 	Owner    RepoOwner `json:"owner"`
+	CloneURL string    `json:"clone_url"`
 
 	Archived      bool     `json:"archived"`
 	DefaultBranch string   `json:"default_branch"`

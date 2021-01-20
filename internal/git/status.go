@@ -1,4 +1,4 @@
-package main
+package git
 
 import (
 	// "bufio"
@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-type gitStatus struct {
+type Status struct {
 	BranchHead string
 
 	ChangedOrRenamed bool
@@ -17,8 +17,8 @@ type gitStatus struct {
 	Ignored          bool
 }
 
-func getGitStatus(path string) (gitStatus, error) {
-	var status gitStatus
+func getStatus(path string) (Status, error) {
+	var status Status
 
 	cmd := exec.Command("git", "status", "--null", "--porcelain=v2",
 		"--branch", "--ignored", "--untracked=normal")
