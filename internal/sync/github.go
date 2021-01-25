@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"fmt"
+	"io"
 	"path/filepath"
 
 	"github.com/mikesep/frond/internal/git"
@@ -40,7 +41,9 @@ type gitHubConfigCriteria struct {
 
 //------------------------------------------------------------------------------
 
-func (cfg gitHubConfig) LookForRepos() (map[string]repoAtPath, map[string]string, error) {
+func (cfg gitHubConfig) LookForRepos(console io.Writer) (
+	map[string]repoAtPath, map[string]string, error,
+) {
 	cred, err := git.FillCredential("https", cfg.Server)
 	if err != nil {
 		return nil, nil, err
@@ -61,11 +64,14 @@ func (cfg gitHubConfig) LookForRepos() (map[string]repoAtPath, map[string]string
 	rejectedRepos := map[string]string{}
 
 	for owner := range cfg.Owners {
+		fmt.Fprintf(console, "Finding repositories in %s/%s..", cfg.Server, owner)
 		// TODO use repo type?
-		rr, err := ghSAT.ReposInOrg(context.Background(), owner, github.AllRepos)
+		rr, err := ghSAT.ReposInOrg(context.Background(), console, owner, github.AllRepos)
 		if err != nil {
+			fmt.Fprintf(console, " FAILED!\n")
 			return nil, nil, err
 		}
+		fmt.Fprintf(console, " done.\n")
 
 		for _, r := range rr {
 			compURL, err := comparableRepoURL(r.CloneURL)

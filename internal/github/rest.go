@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -53,7 +54,8 @@ const (
 
 type RepoFilterFunc func(r Repo) bool
 
-func (sat ServerAndToken) ReposInOrg(ctx context.Context, org string, repoType RepoType,
+func (sat ServerAndToken) ReposInOrg(
+	ctx context.Context, progress io.Writer, org string, repoType RepoType,
 ) ([]Repo, error) {
 	var results []Repo
 
@@ -69,6 +71,7 @@ func (sat ServerAndToken) ReposInOrg(ctx context.Context, org string, repoType R
 		req.Header.Set("Authorization", "bearer "+sat.Token)
 		req.Header.Set("Accept", "application/vnd.github.v3+json")
 
+		fmt.Fprintf(progress, ".")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return results, err

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"runtime"
@@ -12,23 +13,21 @@ import (
 
 	"github.com/mikesep/frond/internal/git"
 	giturls "github.com/whilp/git-urls"
+	"golang.org/x/term"
 )
 
 type Options struct {
 	Init InitOptions `command:"init"`
 	// Prune PruneOptions `command:"prune"`
 
-	DryRun    bool `short:"n" long:"dry-run" description:"dry run"`
-	Prune     bool `short:"p" long:"prune" description:"prune"`
-	KeepGoing bool `short:"k" long:"keep-going" description:"Keep going even if a sync fails"`
+	DryRun    bool `short:"n" long:"dry-run" description:"Don't actually perform actions; just print them."`
+	Prune     bool `short:"p" long:"prune" description:"Remove extra repositories."`
+	KeepGoing bool `short:"k" long:"keep-going" description:"Keep going even if an action fails."`
 
-	Jobs *int `short:"j" long:"jobs" description:"set parallelism"` // TODO
-
-	// TODO jobs parallelism
+	Jobs *int `short:"j" long:"jobs" value-name:"N" description:"Run up to N actions in parallel. Defaults to NumCPU."`
 
 	// TODO --all    sync from the root (the dir where the sync config was found)
 	// TODO sync from the current dir down
-
 	// TODO positional args for what to sync
 }
 
@@ -41,7 +40,7 @@ func (opts *Options) Execute(args []string) error {
 		return err
 	}
 
-	actions, err := buildActionList(cfg)
+	actions, err := buildActionList(cfg, os.Stderr)
 	if err != nil {
 		return err
 	}
@@ -54,13 +53,12 @@ func (opts *Options) Execute(args []string) error {
 	}
 
 	var output reporter
-
-	if opts.DryRun {
-		output = newSerializingReporter(newPlainReporter(os.Stderr, len(actions), maxNameLen))
+	if term.IsTerminal(int(os.Stdout.Fd())) && !opts.DryRun {
+		output = newSerializingReporter(newANSIReporter(os.Stdout, len(actions), maxNameLen))
 	} else {
-		// TODO detect terminal
-		output = newSerializingReporter(newANSIReporter(os.Stderr, len(actions), maxNameLen))
+		output = newSerializingReporter(newPlainReporter(os.Stdout, len(actions), maxNameLen))
 	}
+	output.DrawInitial()
 
 	q := make(chan syncAction)
 
@@ -126,19 +124,22 @@ func (opts *Options) Execute(args []string) error {
 
 //------------------------------------------------------------------------------
 
-func buildActionList(cfg syncConfig) ([]syncAction, error) {
+func buildActionList(cfg syncConfig, console io.Writer) ([]syncAction, error) {
 	var actions []syncAction
 
+	fmt.Fprintf(console, "Finding local repositories...")
 	localRepos, err := git.FindReposInDir(".")
 	if err != nil {
+		fmt.Fprintf(console, " FAILED!\n")
 		return nil, err
 	}
+	fmt.Fprintf(console, " done.\n")
 
 	idealRepos := map[string]repoAtPath{} // comparable URL -> repoAtPath
 	rejectedRepos := map[string]string{}  // comparable URL -> reason for rejection
 
 	if cfg.GitHub != nil {
-		idealRepos, rejectedRepos, err = cfg.GitHub.LookForRepos()
+		idealRepos, rejectedRepos, err = cfg.GitHub.LookForRepos(console)
 		if err != nil {
 			return nil, err
 		}

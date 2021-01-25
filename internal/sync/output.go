@@ -22,6 +22,7 @@ type actionEvent struct {
 }
 
 type reporter interface {
+	DrawInitial()
 	HandleEvent(actionEvent)
 	Done(note string)
 	NumFailed() int
@@ -50,6 +51,10 @@ func newSerializingReporter(next reporter) *serializingReporter {
 	return &serializingReporter{q: q, done: done, next: next}
 }
 
+func (r *serializingReporter) DrawInitial() {
+	r.next.DrawInitial()
+}
+
 func (r *serializingReporter) HandleEvent(event actionEvent) {
 	r.q <- event
 }
@@ -76,9 +81,6 @@ func newANSIReporter(w io.Writer, totalItems int, maxNameLen int) *ansiReporter 
 		ignored:  make([]actionEvent, 0, totalItems),
 	}
 
-	r.printProgressLine()
-	fmt.Fprintf(r.output, "\n") // leave space for event line
-
 	return r
 }
 
@@ -92,6 +94,11 @@ type ansiReporter struct {
 	failed    []actionEvent
 	ignored   []actionEvent
 	succeeded int
+}
+
+func (r *ansiReporter) DrawInitial() {
+	r.printProgressLine()
+	fmt.Fprintf(r.output, "\n") // leave space for event line
 }
 
 func (r *ansiReporter) HandleEvent(event actionEvent) {
@@ -167,6 +174,10 @@ type plainReporter struct {
 	failed    int
 	succeeded int
 	ignored   int
+}
+
+func (r *plainReporter) DrawInitial() {
+	// nothing required
 }
 
 func (r *plainReporter) HandleEvent(event actionEvent) {
