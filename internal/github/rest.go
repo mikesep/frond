@@ -53,8 +53,7 @@ const (
 
 type RepoFilterFunc func(r Repo) bool
 
-func (sat ServerAndToken) ReposInOrg(
-	ctx context.Context, org string, repoType RepoType, repoFilterFunc RepoFilterFunc,
+func (sat ServerAndToken) ReposInOrg(ctx context.Context, org string, repoType RepoType,
 ) ([]Repo, error) {
 	var results []Repo
 
@@ -90,15 +89,7 @@ func (sat ServerAndToken) ReposInOrg(
 			return nil, err
 		}
 
-		if repoFilterFunc != nil {
-			for _, r := range repos {
-				if repoFilterFunc(r) {
-					results = append(results, r)
-				}
-			}
-		} else {
-			results = append(results, repos...)
-		}
+		results = append(results, repos...)
 
 		nextURL = getRelFromLinkHeader(resp.Header.Get("Link"), "next")
 		if nextURL == "" {

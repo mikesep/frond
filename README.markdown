@@ -38,6 +38,9 @@ Created frond.sync.yaml.
 ### Multi-org/user
 
 ```console
+$ frond sync init github.com/apache github.com/bloomberg github.com/containers
+$ frond sync init github.com/{apache,bloomberg,containers} # bash-ism
+
 $ frond sync init github.com/apache,bloomberg,containers
 $ frond sync init github.com apache bloomberg containers
 $ frond sync init github.com --orgs=apache,bloomberg,containers

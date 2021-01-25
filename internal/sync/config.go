@@ -32,7 +32,7 @@ func findConfigFile(dir string) (string, error) {
 		path := filepath.Join(dir, syncConfigFile)
 		_, err := os.Stat(path)
 		if err == nil {
-			fmt.Printf("DEBUG: found config at %q\n", path)
+			// fmt.Printf("DEBUG: found config at %q\n", path)
 			return path, nil
 		}
 

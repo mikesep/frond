@@ -40,10 +40,10 @@ type gitHubConfigCriteria struct {
 
 //------------------------------------------------------------------------------
 
-func (cfg gitHubConfig) getReposAtPaths() ([]repoAtPath, error) {
+func (cfg gitHubConfig) LookForRepos() (map[string]repoAtPath, map[string]string, error) {
 	cred, err := git.FillCredential("https", cfg.Server)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	ghSAT := github.ServerAndToken{
@@ -57,34 +57,42 @@ func (cfg gitHubConfig) getReposAtPaths() ([]repoAtPath, error) {
 		}
 	}
 
-	filter := func(r github.Repo) bool {
-		return filterGitHubRepo(cfg, r)
-	}
-	// TODO use repo type?
-
-	var repos []repoAtPath
+	idealRepos := map[string]repoAtPath{}
+	rejectedRepos := map[string]string{}
 
 	for owner := range cfg.Owners {
-		rr, err := ghSAT.ReposInOrg(context.Background(), owner, github.AllRepos, filter)
+		// TODO use repo type?
+		rr, err := ghSAT.ReposInOrg(context.Background(), owner, github.AllRepos)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+
 		for _, r := range rr {
-			repos = append(repos, repoAtPath{
+			compURL, err := comparableRepoURL(r.CloneURL)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			if reason := cfg.filterRepo(r); reason != "" {
+				rejectedRepos[compURL] = reason
+				continue
+			}
+
+			idealRepos[compURL] = repoAtPath{
 				Path: cfg.pathForRepo(r.Owner.Login, r.Name),
 				URL:  r.CloneURL,
-			})
+			}
 		}
 	}
 
-	return repos, nil
+	return idealRepos, rejectedRepos, nil
 }
 
 func (cfg gitHubConfig) pathForRepo(owner, repo string) string {
 	const defaultOwnerPrefixSeparator = "__"
 
 	if cfg.SingleOwner != "" {
-		if cfg.SingleDirForAllRepos != nil && *cfg.SingleDirForAllRepos == false {
+		if cfg.SingleDirForAllRepos != nil && !*cfg.SingleDirForAllRepos {
 			if cfg.OwnerPrefixSeparator != nil {
 				return filepath.Join(
 					owner, fmt.Sprintf("%s%s%s", owner, *cfg.OwnerPrefixSeparator, repo))
@@ -100,7 +108,7 @@ func (cfg gitHubConfig) pathForRepo(owner, repo string) string {
 		return repo
 	}
 
-	if cfg.SingleDirForAllRepos != nil && *cfg.SingleDirForAllRepos == true {
+	if cfg.SingleDirForAllRepos != nil && *cfg.SingleDirForAllRepos {
 		if cfg.OwnerPrefixSeparator != nil {
 			return fmt.Sprintf("%s%s%s", owner, *cfg.OwnerPrefixSeparator, repo)
 		}
@@ -116,7 +124,7 @@ func (cfg gitHubConfig) pathForRepo(owner, repo string) string {
 	return filepath.Join(owner, repo)
 }
 
-func filterGitHubRepo(cfg gitHubConfig, repo github.Repo) bool {
+func (cfg gitHubConfig) filterRepo(repo github.Repo) string {
 	ownerCriteria := cfg.Owners[repo.Owner.Login]
 
 	names := cfg.Names
@@ -124,8 +132,7 @@ func filterGitHubRepo(cfg gitHubConfig, repo github.Repo) bool {
 		names = ownerCriteria.Names
 	}
 	if !matchesAnyFilter(repo.Name, names) {
-		// fmt.Printf("%v doesn't match any names in (%v)\n", repo.Name, names)
-		return false
+		return fmt.Sprintf("%s doesn't match any name in %v", repo.Name, names)
 	}
 
 	topics := cfg.Topics
@@ -133,17 +140,16 @@ func filterGitHubRepo(cfg gitHubConfig, repo github.Repo) bool {
 		topics = ownerCriteria.Topics
 	}
 	if !anyWordMatchesAnyFilter(repo.Topics, topics) {
-		// fmt.Printf("%v: repo.Topics (%v) doesn't match any topics in (%v)\n", repo.FullName, repo.Topics, topics)
-		return false
+		return fmt.Sprintf("none of the repo topics %v match any config topic %v",
+			repo.Topics, topics)
 	}
 
 	languages := cfg.Languages
 	if ownerCriteria != nil && len(ownerCriteria.Languages) > 0 {
-		topics = ownerCriteria.Languages
+		languages = ownerCriteria.Languages
 	}
 	if !matchesAnyFilter(repo.Language, languages) {
-		// fmt.Printf("%v: %v doesn't match any languages in (%v)\n", repo.FullName, repo.Language, languages)
-		return false
+		return fmt.Sprintf("%s doesn't match any language in %v", repo.Language, languages)
 	}
 
 	archived := cfg.Archived
@@ -151,7 +157,11 @@ func filterGitHubRepo(cfg gitHubConfig, repo github.Repo) bool {
 		archived = ownerCriteria.Archived
 	}
 	if archived != nil && repo.Archived != *archived {
-		return false
+		isOrIsNot := "is"
+		if !repo.Archived {
+			isOrIsNot = "is not"
+		}
+		return fmt.Sprintf("repo %s archived", isOrIsNot)
 	}
 
 	fork := cfg.Fork
@@ -159,7 +169,11 @@ func filterGitHubRepo(cfg gitHubConfig, repo github.Repo) bool {
 		fork = ownerCriteria.Fork
 	}
 	if fork != nil && repo.Fork != *fork {
-		return false
+		isOrIsNot := "is"
+		if !repo.Fork {
+			isOrIsNot = "is not"
+		}
+		return fmt.Sprintf("repo %s a fork", isOrIsNot)
 	}
 
 	isTemplate := cfg.IsTemplate
@@ -167,7 +181,11 @@ func filterGitHubRepo(cfg gitHubConfig, repo github.Repo) bool {
 		isTemplate = ownerCriteria.IsTemplate
 	}
 	if isTemplate != nil && repo.IsTemplate != *isTemplate {
-		return false
+		isOrIsNot := "is"
+		if !repo.IsTemplate {
+			isOrIsNot = "is not"
+		}
+		return fmt.Sprintf("repo %s a template", isOrIsNot)
 	}
 
 	private := cfg.Private
@@ -175,8 +193,12 @@ func filterGitHubRepo(cfg gitHubConfig, repo github.Repo) bool {
 		private = ownerCriteria.Private
 	}
 	if private != nil && repo.Private != *private {
-		return false
+		isOrIsNot := "is"
+		if !repo.Private {
+			isOrIsNot = "is not"
+		}
+		return fmt.Sprintf("repo %s private", isOrIsNot)
 	}
 
-	return true
+	return ""
 }
