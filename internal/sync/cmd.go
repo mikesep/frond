@@ -60,7 +60,7 @@ func (opts *Options) Execute(args []string) error {
 	}
 	output.DrawInitial()
 
-	q := make(chan syncAction)
+	queue := make(chan syncAction)
 
 	var wg sync.WaitGroup
 	workersCtx, cancelWorkers := context.WithCancel(context.Background())
@@ -68,49 +68,18 @@ func (opts *Options) Execute(args []string) error {
 	if opts.Jobs != nil {
 		workers = *opts.Jobs
 	}
+
 	wg.Add(workers)
 	for i := 0; i < workers; i++ {
-		go func() {
-			defer wg.Done()
-			for {
-				select {
-				case <-workersCtx.Done():
-					return
-				case action := <-q:
-					if action == nil {
-						return
-					}
-					event := action.Do(opts)
-					output.HandleEvent(event)
-					if event.Type == actionFailed {
-						if !opts.KeepGoing {
-							cancelWorkers()
-							return
-						}
-					}
-				}
-			}
-		}()
+		go actionWorker(workersCtx, cancelWorkers, &wg, queue, opts, output)
 	}
 
-	enqueuedAllActions := false
-	func() {
-		for i, action := range actions {
-			select {
-			case <-workersCtx.Done():
-				return
-			case q <- action:
-				if i == len(actions)-1 {
-					enqueuedAllActions = true
-				}
-			}
-		}
-	}()
-	close(q)
+	enqueuedAll := enqueueActions(actions, queue, workersCtx)
+	close(queue)
 	wg.Wait()
 
 	var note string
-	if !enqueuedAllActions {
+	if !enqueuedAll {
 		note = "Stopped early due to failures. (Use --keep-going to keep going.)"
 	}
 	output.Done(note)
@@ -120,6 +89,49 @@ func (opts *Options) Execute(args []string) error {
 	}
 
 	return nil
+}
+
+func actionWorker(
+	ctx context.Context, cancelWorkers context.CancelFunc, wg *sync.WaitGroup,
+	queue <-chan syncAction, opts *Options, output reporter,
+) {
+	defer wg.Done()
+
+	for {
+		select {
+		case <-ctx.Done(): // cancelled
+			return
+
+		case action := <-queue:
+			if action == nil { // channel closed
+				return
+			}
+
+			event := action.Do(opts)
+			output.HandleEvent(event)
+			if event.Type == actionFailed && !opts.KeepGoing {
+				cancelWorkers()
+				return
+			}
+		}
+	}
+}
+
+func enqueueActions(actions []syncAction, queue chan<- syncAction, workersCtx context.Context) bool {
+	enqueuedAll := false
+
+	for i, action := range actions {
+		select {
+		case <-workersCtx.Done():
+			return enqueuedAll
+		case queue <- action:
+			if i == len(actions)-1 {
+				enqueuedAll = true
+			}
+		}
+	}
+
+	return enqueuedAll
 }
 
 //------------------------------------------------------------------------------
