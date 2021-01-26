@@ -42,7 +42,7 @@ type gitHubConfigCriteria struct {
 //------------------------------------------------------------------------------
 
 func (cfg gitHubConfig) LookForRepos(console io.Writer) (
-	map[string]repoAtPath, map[string]string, error,
+	idealRepoMap, rejectionReasonMap, error,
 ) {
 	cred, err := git.FillCredential("https", cfg.Server)
 	if err != nil {
@@ -60,8 +60,8 @@ func (cfg gitHubConfig) LookForRepos(console io.Writer) (
 		}
 	}
 
-	idealRepos := map[string]repoAtPath{}
-	rejectedRepos := map[string]string{}
+	idealRepos := idealRepoMap{}
+	rejectedRepos := rejectionReasonMap{}
 
 	for owner := range cfg.Owners {
 		fmt.Fprintf(console, "Finding repositories in %s/%s..", cfg.Server, owner)
@@ -84,9 +84,10 @@ func (cfg gitHubConfig) LookForRepos(console io.Writer) (
 				continue
 			}
 
-			idealRepos[compURL] = repoAtPath{
-				Path: cfg.pathForRepo(r.Owner.Login, r.Name),
-				URL:  r.CloneURL,
+			idealRepos[compURL] = idealRepo{
+				Path:          cfg.pathForRepo(r.Owner.Login, r.Name),
+				URL:           r.CloneURL,
+				DefaultBranch: r.DefaultBranch,
 			}
 		}
 	}

@@ -136,6 +136,15 @@ func enqueueActions(actions []syncAction, queue chan<- syncAction, workersCtx co
 
 //------------------------------------------------------------------------------
 
+type idealRepo struct {
+	Path          string
+	URL           string
+	DefaultBranch string
+}
+
+type idealRepoMap map[string]idealRepo    // comparable URL -> repoAtPath
+type rejectionReasonMap map[string]string // comparable URL -> rejection reason
+
 func buildActionList(cfg syncConfig, console io.Writer) ([]syncAction, error) {
 	var actions []syncAction
 
@@ -147,11 +156,11 @@ func buildActionList(cfg syncConfig, console io.Writer) ([]syncAction, error) {
 	}
 	fmt.Fprintf(console, " done.\n")
 
-	idealRepos := map[string]repoAtPath{} // comparable URL -> repoAtPath
-	rejectedRepos := map[string]string{}  // comparable URL -> reason for rejection
+	idealRepos := idealRepoMap{}
+	rejectionReasons := rejectionReasonMap{}
 
 	if cfg.GitHub != nil {
-		idealRepos, rejectedRepos, err = cfg.GitHub.LookForRepos(console)
+		idealRepos, rejectionReasons, err = cfg.GitHub.LookForRepos(console)
 		if err != nil {
 			return nil, err
 		}
@@ -159,7 +168,7 @@ func buildActionList(cfg syncConfig, console io.Writer) ([]syncAction, error) {
 
 	// fmt.Printf("DEBUG: %d local repos:\n", len(localRepos))
 	for _, r := range localRepos {
-		action, err := matchRepoToAction(r, idealRepos, rejectedRepos)
+		action, err := matchRepoToAction(r, idealRepos, rejectionReasons)
 		if err != nil {
 			return nil, err
 		}
@@ -168,7 +177,10 @@ func buildActionList(cfg syncConfig, console io.Writer) ([]syncAction, error) {
 	}
 
 	for _, rap := range idealRepos {
-		actions = append(actions, actionCloneRepo{repoAtPath: rap})
+		actions = append(actions, actionCloneRepo{
+			URL:  rap.URL,
+			Path: rap.Path,
+		})
 	}
 
 	return actions, nil
@@ -176,78 +188,81 @@ func buildActionList(cfg syncConfig, console io.Writer) ([]syncAction, error) {
 
 // This removes repos from idealRepos as they're matched!
 func matchRepoToAction(
-	r *git.LocalRepo, idealRepos map[string]repoAtPath, rejectedRepos map[string]string,
+	localRepo *git.LocalRepo, idealRepos idealRepoMap, rejectionReasons rejectionReasonMap,
 ) (syncAction, error) {
-	remotes, err := r.Remotes()
+	remotes, err := localRepo.Remotes()
 	if err != nil {
 		return nil, err
 	}
 
-	var matchingIdealURLs []string
-	var matchedRejectionURL, matchedRejectionReason string
+	type remoteMatch struct {
+		RemoteName    string
+		ComparableURL string
+	}
 
-	for _, remote := range remotes {
+	var remoteMatches []remoteMatch
+	var matchedRejectedURL, matchedRejectionReason string
+
+	for remoteName, remote := range remotes {
 		compURL, err := comparableRepoURL(remote.FetchURL)
 		if err != nil {
 			return nil, err
 		}
 		if _, ok := idealRepos[compURL]; ok {
-			matchedRejectionURL = ""
+			matchedRejectedURL = ""
 			matchedRejectionReason = ""
 
-			matchingIdealURLs = append(matchingIdealURLs, compURL)
+			remoteMatches = append(remoteMatches, remoteMatch{
+				RemoteName:    remoteName,
+				ComparableURL: compURL,
+			})
 			continue
 		}
 
-		if reason, ok := rejectedRepos[compURL]; ok {
-			matchedRejectionURL = compURL
+		if reason, ok := rejectionReasons[compURL]; ok {
+			matchedRejectedURL = compURL
 			matchedRejectionReason = reason
 		}
 	}
 
-	switch len(matchingIdealURLs) {
+	switch len(remoteMatches) {
 	case 0:
-		if matchedRejectionURL != "" {
+		if matchedRejectedURL != "" {
 			return actionRemoveRepo{
-				repoAtPath: repoAtPath{
-					URL:  matchedRejectionURL,
-					Path: r.Root(),
-				},
+				Path:   localRepo.Root(),
 				Reason: matchedRejectionReason,
 			}, nil
 		}
 
 		return actionRemoveRepo{
-			repoAtPath: repoAtPath{
-				URL:  "",
-				Path: r.Root(),
-			},
+			Path:   localRepo.Root(),
 			Reason: "did not match any remote repo URL",
 		}, nil
 
 	case 1:
-		remoteURL := matchingIdealURLs[0]
-		ideal := idealRepos[remoteURL]
-		// fmt.Printf("DEBUG: %s matched with %s\n", r.Root(), ideal)
-		delete(idealRepos, remoteURL)
+		matchedRemote := remoteMatches[0]
 
-		if r.Root() != ideal.Path {
+		ideal := idealRepos[matchedRemote.ComparableURL]
+		delete(idealRepos, matchedRemote.ComparableURL)
+
+		defaultTrackingBranch := fmt.Sprintf("%s/%s", matchedRemote.RemoteName, ideal.DefaultBranch)
+
+		if localRepo.Root() != ideal.Path {
 			return actionMoveAndSyncRepo{
-				repoAtPath: repoAtPath{
-					URL:  ideal.URL,
-					Path: r.Root(),
-				},
-				DestPath: ideal.Path,
+				OrigPath:              localRepo.Root(),
+				DestPath:              ideal.Path,
+				DefaultTrackingBranch: defaultTrackingBranch,
 			}, nil
 		}
 
 		return actionSyncRepo{
-			repoAtPath: ideal,
+			Path:                  localRepo.Root(),
+			DefaultTrackingBranch: defaultTrackingBranch,
 		}, nil
 
 	default:
 		return nil, fmt.Errorf("%s matched with more than one URL: %v",
-			r.Root(), matchingIdealURLs)
+			localRepo.Root(), remoteMatches)
 	}
 }
 
@@ -259,7 +274,8 @@ type syncAction interface {
 }
 
 type actionCloneRepo struct {
-	repoAtPath
+	URL  string
+	Path string
 }
 
 func (a actionCloneRepo) Name() string {
@@ -277,18 +293,19 @@ func (a actionCloneRepo) Do(opts *Options) actionEvent {
 
 	if opts.DryRun {
 		return actionEvent{
-			Type:    actionSucceeded,
+			Type:    actionCloned,
 			Name:    a.Path,
 			Message: fmt.Sprintf("would clone from %s", a.URL),
 		}
 	}
 
-	return cloneRepo(a.repoAtPath)
+	return cloneRepo(a.URL, a.Path)
 }
 
 type actionMoveAndSyncRepo struct {
-	repoAtPath
-	DestPath string
+	OrigPath              string
+	DestPath              string
+	DefaultTrackingBranch string
 }
 
 func (a actionMoveAndSyncRepo) Name() string {
@@ -299,35 +316,32 @@ func (a actionMoveAndSyncRepo) Do(opts *Options) actionEvent {
 	if _, err := os.Stat(a.DestPath); err != nil || !os.IsNotExist(err) {
 		return actionEvent{
 			Type:    actionFailed,
-			Name:    a.Path,
+			Name:    a.OrigPath,
 			Message: fmt.Sprintf("would move to %s, but it already exists", a.DestPath),
 		}
 	}
 
 	if opts.DryRun {
 		return actionEvent{
-			Type:    actionSucceeded,
+			Type:    actionUpdated,
 			Name:    a.DestPath,
-			Message: fmt.Sprintf("would move to %s and sync from %s", a.DestPath, a.URL),
+			Message: fmt.Sprintf("would move to %s and sync", a.DestPath),
 		}
 	}
 
-	if err := os.Rename(a.Path, a.DestPath); err != nil {
+	if err := os.Rename(a.OrigPath, a.DestPath); err != nil {
 		return actionEvent{
 			Type:    actionFailed,
-			Name:    a.Path,
+			Name:    a.OrigPath,
 			Message: err.Error(),
 		}
 	}
 
-	return syncRepo(repoAtPath{
-		URL:  a.URL,
-		Path: a.DestPath,
-	})
+	return syncRepo(a.DestPath, a.DefaultTrackingBranch)
 }
 
 type actionRemoveRepo struct {
-	repoAtPath
+	Path   string
 	Reason string
 }
 
@@ -339,7 +353,7 @@ func (a actionRemoveRepo) Do(opts *Options) actionEvent {
 	if opts.DryRun {
 		if opts.Prune {
 			return actionEvent{
-				Type:    actionSucceeded,
+				Type:    actionRemoved,
 				Name:    a.Path,
 				Message: fmt.Sprintf("would remove: %s", a.Reason),
 			}
@@ -360,6 +374,8 @@ func (a actionRemoveRepo) Do(opts *Options) actionEvent {
 		}
 	}
 
+	// TODO check for unpushed work on branches that don't line up with their tracking branches
+
 	err := os.RemoveAll(a.Path)
 	if err != nil {
 		return actionEvent{
@@ -370,14 +386,15 @@ func (a actionRemoveRepo) Do(opts *Options) actionEvent {
 	}
 
 	return actionEvent{
-		Type:    actionSucceeded,
+		Type:    actionRemoved,
 		Name:    a.Path,
 		Message: "removed",
 	}
 }
 
 type actionSyncRepo struct {
-	repoAtPath
+	Path                  string
+	DefaultTrackingBranch string
 }
 
 func (a actionSyncRepo) Name() string {
@@ -387,18 +404,13 @@ func (a actionSyncRepo) Name() string {
 func (a actionSyncRepo) Do(opts *Options) actionEvent {
 	if opts.DryRun {
 		return actionEvent{
-			Type:    actionSucceeded,
+			Type:    actionUpdated,
 			Name:    a.Path,
-			Message: fmt.Sprintf("would sync from %s", a.URL),
+			Message: "would sync",
 		}
 	}
 
-	return syncRepo(a.repoAtPath)
-}
-
-type repoAtPath struct {
-	Path string
-	URL  string
+	return syncRepo(a.Path, a.DefaultTrackingBranch)
 }
 
 //------------------------------------------------------------------------------

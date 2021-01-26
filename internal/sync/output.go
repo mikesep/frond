@@ -10,15 +10,19 @@ import (
 type actionEventType string
 
 const (
+	actionCloned    actionEventType = "new "
 	actionFailed    actionEventType = "FAIL"
 	actionIgnored   actionEventType = "ign "
-	actionSucceeded actionEventType = "ok  "
+	actionRemoved   actionEventType = "rm  "
+	actionUnchanged actionEventType = "ok  "
+	actionUpdated   actionEventType = "upd "
 )
 
 type actionEvent struct {
 	Type    actionEventType
 	Name    string
 	Message string
+	Caveats []string
 }
 
 type reporter interface {
@@ -79,6 +83,7 @@ func newANSIReporter(w io.Writer, totalItems int, maxNameLen int) *ansiReporter 
 		nameLen:  maxNameLen,
 		failed:   make([]actionEvent, 0, totalItems),
 		ignored:  make([]actionEvent, 0, totalItems),
+		caveats:  make(map[string][]string),
 	}
 
 	return r
@@ -90,10 +95,16 @@ type ansiReporter struct {
 	countLen int
 	nameLen  int
 
-	done      int
+	done int
+
+	cloned    int
 	failed    []actionEvent
 	ignored   []actionEvent
-	succeeded int
+	removed   int
+	unchanged int
+	updated   int
+
+	caveats map[string][]string // repo name -> list of caveats
 }
 
 func (r *ansiReporter) DrawInitial() {
@@ -108,12 +119,24 @@ func (r *ansiReporter) HandleEvent(event actionEvent) {
 	r.printProgressLine()
 
 	switch event.Type {
+	case actionCloned:
+		r.cloned++
 	case actionFailed:
 		r.failed = append(r.failed, event)
 	case actionIgnored:
 		r.ignored = append(r.ignored, event)
-	case actionSucceeded:
-		r.succeeded++
+	case actionRemoved:
+		r.removed++
+	case actionUnchanged:
+		r.unchanged++
+	case actionUpdated:
+		r.updated++
+	default:
+		panic(fmt.Sprintf("unexpected event: %#v", event))
+	}
+
+	if event.Caveats != nil {
+		r.caveats[event.Name] = event.Caveats
 	}
 
 	fmt.Fprintf(r.output, "%s %-*s %s", event.Type, r.nameLen, event.Name, event.Message)
@@ -128,11 +151,38 @@ func (r *ansiReporter) Done(note string) {
 		fmt.Fprintf(r.output, "%s\n", note)
 	}
 
-	fmt.Fprintf(r.output, "Done! %d failed, %d ignored, %d succeeded, %d total\n",
-		len(r.failed), len(r.ignored), r.succeeded, r.total)
+	fmt.Fprintf(r.output, "Done! ")
+	if r.cloned > 0 {
+		fmt.Fprintf(r.output, "%d cloned, ", r.cloned)
+	}
+	if len(r.failed) > 0 {
+		fmt.Fprintf(r.output, "%d FAILED, ", len(r.failed))
+	}
+	if len(r.ignored) > 0 {
+		fmt.Fprintf(r.output, "%d ignored, ", len(r.ignored))
+	}
+	if r.removed > 0 {
+		fmt.Fprintf(r.output, "%d removed, ", r.removed)
+	}
+	if r.unchanged > 0 {
+		fmt.Fprintf(r.output, "%d unchanged, ", r.unchanged)
+	}
+	if r.updated > 0 {
+		fmt.Fprintf(r.output, "%d updated, ", r.updated)
+	}
+	fmt.Fprintf(r.output, "%d total\n", r.total)
 
 	for _, e := range append(r.failed, r.ignored...) {
 		fmt.Fprintf(r.output, "  %s %-*s %s\n", e.Type, r.nameLen, e.Name, e.Message)
+	}
+
+	if len(r.caveats) > 0 {
+		fmt.Fprintf(r.output, "Caveats:\n")
+		for repo, cavs := range r.caveats {
+			for _, c := range cavs {
+				fmt.Fprintf(r.output, "  %s: %s\n", repo, c)
+			}
+		}
 	}
 }
 
@@ -170,10 +220,15 @@ type plainReporter struct {
 	countLen int
 	nameLen  int
 
-	done      int
+	cloned    int
 	failed    int
-	succeeded int
 	ignored   int
+	removed   int
+	unchanged int
+	updated   int
+
+	caveats int
+	done    int
 }
 
 func (r *plainReporter) DrawInitial() {
@@ -184,12 +239,18 @@ func (r *plainReporter) HandleEvent(event actionEvent) {
 	r.done++
 
 	switch event.Type {
+	case actionCloned:
+		r.cloned++
 	case actionFailed:
 		r.failed++
 	case actionIgnored:
 		r.ignored++
-	case actionSucceeded:
-		r.succeeded++
+	case actionRemoved:
+		r.removed++
+	case actionUnchanged:
+		r.unchanged++
+	case actionUpdated:
+		r.updated++
 	default:
 		panic(fmt.Sprintf("unexpected action event: %#v", event))
 	}
@@ -199,6 +260,11 @@ func (r *plainReporter) HandleEvent(event actionEvent) {
 		r.countLen, r.done, r.total,
 		event.Type, r.nameLen, event.Name, event.Message,
 	)
+
+	r.caveats += len(event.Caveats)
+	for _, caveat := range event.Caveats {
+		fmt.Fprintf(r.output, "  %s\n", caveat)
+	}
 }
 
 func (r *plainReporter) Done(note string) {
@@ -206,9 +272,34 @@ func (r *plainReporter) Done(note string) {
 		fmt.Fprintf(r.output, "%s\n", note)
 	}
 
-	fmt.Fprintf(r.output,
-		"Done! %d failed, %d ignored, %d succeeded, %d total\n",
-		r.failed, r.ignored, r.succeeded, r.total)
+	fmt.Fprintf(r.output, "Done! ")
+	if r.cloned > 0 {
+		fmt.Fprintf(r.output, "%d cloned, ", r.cloned)
+	}
+	if r.failed > 0 {
+		fmt.Fprintf(r.output, "%d FAILED, ", r.failed)
+	}
+	if r.ignored > 0 {
+		fmt.Fprintf(r.output, "%d ignored, ", r.ignored)
+	}
+	if r.removed > 0 {
+		fmt.Fprintf(r.output, "%d removed, ", r.removed)
+	}
+	if r.unchanged > 0 {
+		fmt.Fprintf(r.output, "%d unchanged, ", r.unchanged)
+	}
+	if r.updated > 0 {
+		fmt.Fprintf(r.output, "%d updated, ", r.updated)
+	}
+	fmt.Fprintf(r.output, "%d total\n", r.total)
+
+	if r.caveats > 0 {
+		word := "caveats"
+		if r.caveats == 1 {
+			word = "caveat"
+		}
+		fmt.Fprintf(r.output, "See %d %s above.\n", r.caveats, word)
+	}
 }
 
 func (r *plainReporter) NumFailed() int {
