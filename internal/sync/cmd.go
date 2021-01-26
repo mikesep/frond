@@ -18,7 +18,6 @@ import (
 
 type Options struct {
 	Init InitOptions `command:"init"`
-	// Prune PruneOptions `command:"prune"`
 
 	DryRun    bool `short:"n" long:"dry-run" description:"Don't actually perform actions; just print them."`
 	Prune     bool `short:"p" long:"prune" description:"Remove extra repositories."`
