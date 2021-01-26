@@ -19,11 +19,10 @@ import (
 type Options struct {
 	Init InitOptions `command:"init"`
 
-	DryRun    bool `short:"n" long:"dry-run" description:"Don't actually perform actions; just print them."`
-	Prune     bool `short:"p" long:"prune" description:"Remove extra repositories."`
+	DryRun    bool `short:"n" long:"dry-run" description:"Print actions instead of doing them."`
+	Jobs      *int `short:"j" long:"jobs" value-name:"N" description:"Run up to N actions in parallel. (default: NumCPU)"`
 	KeepGoing bool `short:"k" long:"keep-going" description:"Keep going even if an action fails."`
-
-	Jobs *int `short:"j" long:"jobs" value-name:"N" description:"Run up to N actions in parallel. Defaults to NumCPU."`
+	Prune     bool `short:"p" long:"prune" description:"Remove extra repositories."`
 
 	// TODO --all    sync from the root (the dir where the sync config was found)
 	// TODO sync from the current dir down

@@ -13,10 +13,6 @@ type rootOptions struct {
 	Branch branchOptions `command:"branch"`
 	List   listOptions   `command:"list" alias:"ls"`
 	Sync   sync.Options  `command:"sync" subcommands-optional:"true"`
-
-	Jobs int `short:"j" long:"jobs" value-name:"N" description:"Number of jobs to run in parallel"`
-
-	//ConfigPath string `long:"config" env-var:"FROND_CONFIG" default:"frond.json" description:"path to frond config"`
 }
 
 func main() {
