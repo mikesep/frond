@@ -7,7 +7,9 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 
@@ -24,21 +26,16 @@ type Options struct {
 	KeepGoing bool `short:"k" long:"keep-going" description:"Keep going even if an action fails."`
 	Prune     bool `short:"p" long:"prune" description:"Remove extra repositories."`
 
-	// TODO --all    sync from the root (the dir where the sync config was found)
-	// TODO sync from the current dir down
-	// TODO positional args for what to sync
+	// TODO --reset to force back to default and fast-forward branches to tracking
 }
 
 func (opts *Options) Execute(args []string) error {
-	cfg, err := parseConfigFromFoundFile()
+	workDir, err := os.Getwd()
 	if err != nil {
-		if errors.Is(err, errNoConfigFileFound) {
-			return fmt.Errorf("%w\nDid you run 'frond sync init' first?", err)
-		}
 		return err
 	}
 
-	actions, err := buildActionList(cfg, os.Stderr)
+	actions, err := buildActionList(workDir, args, os.Stderr)
 	if err != nil {
 		return err
 	}
@@ -61,7 +58,7 @@ func (opts *Options) Execute(args []string) error {
 	queue := make(chan syncAction)
 
 	var wg sync.WaitGroup
-	workersCtx, cancelWorkers := context.WithCancel(context.Background())
+	workerCtx, cancelWorkers := context.WithCancel(context.Background())
 	workers := runtime.NumCPU()
 	if opts.Jobs != nil {
 		workers = *opts.Jobs
@@ -69,10 +66,10 @@ func (opts *Options) Execute(args []string) error {
 
 	wg.Add(workers)
 	for i := 0; i < workers; i++ {
-		go actionWorker(workersCtx, cancelWorkers, &wg, queue, opts, output)
+		go actionWorker(workerCtx, cancelWorkers, &wg, queue, opts, output)
 	}
 
-	enqueuedAll := enqueueActions(actions, queue, workersCtx)
+	enqueuedAll := enqueueActions(workerCtx, actions, queue)
 	close(queue)
 	wg.Wait()
 
@@ -115,12 +112,12 @@ func actionWorker(
 	}
 }
 
-func enqueueActions(actions []syncAction, queue chan<- syncAction, workersCtx context.Context) bool {
+func enqueueActions(ctx context.Context, actions []syncAction, queue chan<- syncAction) bool {
 	enqueuedAll := false
 
 	for i, action := range actions {
 		select {
-		case <-workersCtx.Done():
+		case <-ctx.Done():
 			return enqueuedAll
 		case queue <- action:
 			if i == len(actions)-1 {
@@ -143,28 +140,52 @@ type idealRepo struct {
 type idealRepoMap map[string]idealRepo    // comparable URL -> repoAtPath
 type rejectionReasonMap map[string]string // comparable URL -> rejection reason
 
-func buildActionList(cfg syncConfig, console io.Writer) ([]syncAction, error) {
-	var actions []syncAction
+func buildActionList(workDir string, cmdArgs []string, console io.Writer) ([]syncAction, error) {
+	if !filepath.IsAbs(workDir) {
+		panic(fmt.Sprintf("workDir is not absolute: %q", workDir))
+	}
 
-	fmt.Fprintf(console, "Finding local repositories...")
-	localRepos, err := git.FindReposInDir(".")
+	cfgPath, err := findConfigFile(workDir)
 	if err != nil {
-		fmt.Fprintf(console, " FAILED!\n")
+		if errors.Is(err, errNoConfigFileFound) {
+			return nil, fmt.Errorf("%w\nDid you run 'frond sync init' first?", err)
+		}
 		return nil, err
 	}
-	fmt.Fprintf(console, " done.\n")
+
+	cfg, err := parseConfigFromFile(cfgPath)
+	if err != nil {
+		return nil, err
+	}
+
+	syncRoot := filepath.Dir(cfgPath)
+
+	localRepos, err := findRelativeLocalRepos(syncRoot, workDir, cmdArgs, console)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Printf("DEBUG: localRepos:\n")
+	for i, r := range localRepos {
+		fmt.Printf("%d: %v\n", i, r)
+	}
 
 	idealRepos := idealRepoMap{}
 	rejectionReasons := rejectionReasonMap{}
 
 	if cfg.GitHub != nil {
-		idealRepos, rejectionReasons, err = cfg.GitHub.LookForRepos(console)
+		idealRepos, rejectionReasons, err = findGitHubRepos(
+			syncRoot, workDir, cmdArgs, cfg.GitHub, console)
 		if err != nil {
 			return nil, err
 		}
 	}
+	fmt.Printf("DEBUG: idealRepos:\n")
+	for k, v := range idealRepos {
+		fmt.Printf("%v: %v\n", k, v)
+	}
 
-	// fmt.Printf("DEBUG: %d local repos:\n", len(localRepos))
+	var actions []syncAction
+
 	for _, r := range localRepos {
 		action, err := matchRepoToAction(r, idealRepos, rejectionReasons)
 		if err != nil {
@@ -184,10 +205,77 @@ func buildActionList(cfg syncConfig, console io.Writer) ([]syncAction, error) {
 	return actions, nil
 }
 
+func findRelativeLocalRepos(syncRoot, workDir string, cmdArgs []string, console io.Writer,
+) ([]string, error) {
+	if !filepath.IsAbs(syncRoot) {
+		panic(fmt.Sprintf("syncRoot is not an absolute path: %q", syncRoot))
+	}
+	if !filepath.IsAbs(workDir) {
+		panic(fmt.Sprintf("workDir is not an absolute path: %q", workDir))
+	}
+
+	var absTargets []string
+	for _, arg := range cmdArgs {
+		argPath := arg
+		if !filepath.IsAbs(arg) {
+			argPath = filepath.Join(workDir, arg)
+		}
+
+		relToRoot, err := filepath.Rel(syncRoot, argPath)
+		if err != nil {
+			return nil, err
+		}
+
+		if strings.HasPrefix(relToRoot, "..") {
+			return nil, fmt.Errorf("arg %q points outside sync root %q", arg, syncRoot)
+		}
+
+		abs, err := filepath.Abs(argPath)
+		if err != nil {
+			return nil, err
+		}
+
+		absTargets = append(absTargets, abs)
+	}
+	if len(absTargets) == 0 {
+		absTargets = []string{syncRoot}
+	}
+
+	// De-duplicate repos because relTargets could overlap
+	repoSet := map[string]bool{}
+
+	fmt.Fprintf(console, "Finding local repositories... ")
+	for _, t := range absTargets {
+		repos, err := git.FindReposInDir(t)
+		if err != nil {
+			fmt.Fprintf(console, "FAILED!\n")
+			return nil, err
+		}
+
+		for _, r := range repos {
+			rel, err := filepath.Rel(workDir, r)
+			if err != nil {
+				return nil, err
+			}
+			repoSet[rel] = true
+		}
+	}
+	fmt.Fprintf(console, "done.\n")
+
+	repos := make([]string, 0, len(repoSet))
+	for r := range repoSet {
+		repos = append(repos, r)
+	}
+	sort.Strings(repos)
+
+	return repos, nil
+}
+
 // This removes repos from idealRepos as they're matched!
-func matchRepoToAction(
-	localRepo *git.LocalRepo, idealRepos idealRepoMap, rejectionReasons rejectionReasonMap,
+func matchRepoToAction(repoPath string, idealRepos idealRepoMap, rejectionReasons rejectionReasonMap,
 ) (syncAction, error) {
+	localRepo := git.LocalRepo{Root: repoPath}
+
 	remotes, err := localRepo.Remotes()
 	if err != nil {
 		return nil, err
@@ -227,13 +315,13 @@ func matchRepoToAction(
 	case 0:
 		if matchedRejectedURL != "" {
 			return actionRemoveRepo{
-				Path:   localRepo.Root(),
+				Path:   localRepo.Root,
 				Reason: matchedRejectionReason,
 			}, nil
 		}
 
 		return actionRemoveRepo{
-			Path:   localRepo.Root(),
+			Path:   localRepo.Root,
 			Reason: "did not match any remote repo URL",
 		}, nil
 
@@ -245,22 +333,22 @@ func matchRepoToAction(
 
 		defaultTrackingBranch := fmt.Sprintf("%s/%s", matchedRemote.RemoteName, ideal.DefaultBranch)
 
-		if localRepo.Root() != ideal.Path {
+		if localRepo.Root != ideal.Path {
 			return actionMoveAndSyncRepo{
-				OrigPath:              localRepo.Root(),
+				OrigPath:              localRepo.Root,
 				DestPath:              ideal.Path,
 				DefaultTrackingBranch: defaultTrackingBranch,
 			}, nil
 		}
 
 		return actionSyncRepo{
-			Path:                  localRepo.Root(),
+			Path:                  localRepo.Root,
 			DefaultTrackingBranch: defaultTrackingBranch,
 		}, nil
 
 	default:
 		return nil, fmt.Errorf("%s matched with more than one URL: %v",
-			localRepo.Root(), remoteMatches)
+			localRepo.Root, remoteMatches)
 	}
 }
 

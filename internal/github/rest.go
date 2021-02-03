@@ -54,15 +54,56 @@ const (
 
 type RepoFilterFunc func(r Repo) bool
 
-func (sat ServerAndToken) ReposInOrg(
-	ctx context.Context, progress io.Writer, org string, repoType RepoType,
+func (sat ServerAndToken) GetRepo(ctx context.Context, fullName string) (Repo, error) {
+	apiURL := fmt.Sprintf("%s/repos/%s", sat.restV3URL(), fullName)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return Repo{}, err
+	}
+
+	req.Header.Set("Authorization", "bearer "+sat.Token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return Repo{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return Repo{}, fmt.Errorf("bad status code %d from %s", resp.StatusCode, apiURL)
+	}
+
+	respBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return Repo{}, err
+	}
+
+	var repoInfo Repo
+	if err := json.Unmarshal(respBytes, &repoInfo); err != nil {
+		return Repo{}, err
+	}
+
+	return repoInfo, nil
+}
+
+func (sat ServerAndToken) ListRepos(
+	ctx context.Context, progress io.Writer, owner RepoOwner, repoType RepoType,
 ) ([]Repo, error) {
 	var results []Repo
 
-	nextURL := fmt.Sprintf("%s/orgs/%s/repos?type=%s&per_page=100&sort=full_name",
-		sat.restV3URL(), org, repoType)
+	orgsOrUsers := "orgs"
+	if owner.Type == "User" {
+		orgsOrUsers = "users"
+	}
 
-	for {
+	nextURL := fmt.Sprintf("%s/%s/%s/repos?type=%s&per_page=100&sort=full_name",
+		sat.restV3URL(), orgsOrUsers, owner.Login, repoType)
+
+	for nextURL != "" {
+		fmt.Fprint(progress, ".") // print a dot for each iteration
+
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, nextURL, nil)
 		if err != nil {
 			return results, err
@@ -71,7 +112,6 @@ func (sat ServerAndToken) ReposInOrg(
 		req.Header.Set("Authorization", "bearer "+sat.Token)
 		req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-		fmt.Fprintf(progress, ".")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return results, err
@@ -95,9 +135,6 @@ func (sat ServerAndToken) ReposInOrg(
 		results = append(results, repos...)
 
 		nextURL = getRelFromLinkHeader(resp.Header.Get("Link"), "next")
-		if nextURL == "" {
-			break
-		}
 	}
 
 	return results, nil

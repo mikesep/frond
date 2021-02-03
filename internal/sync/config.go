@@ -13,26 +13,21 @@ const syncConfigFile = "frond.sync.yaml"
 
 var errNoConfigFileFound = fmt.Errorf("no sync config file found")
 
-func findConfigFile(dir string) (string, error) {
-	var err error
-
-	if dir == "" {
-		dir, err = os.Getwd()
-		if err != nil {
-			return "", fmt.Errorf("could not getwd: %w", err)
-		}
+// workDir should be absolute
+func findConfigFile(workDir string) (string, error) {
+	if workDir == "" {
+		panic("empty workDir")
+	}
+	if !filepath.IsAbs(workDir) {
+		panic(fmt.Sprintf("workDir should be absolute, got %q", workDir))
 	}
 
-	dir, err = filepath.Abs(dir)
-	if err != nil {
-		return "", fmt.Errorf("failed filepath.Abs: %w", err)
-	}
+	curDir := workDir
 
 	for {
-		path := filepath.Join(dir, syncConfigFile)
+		path := filepath.Join(curDir, syncConfigFile)
 		_, err := os.Stat(path)
 		if err == nil {
-			// fmt.Printf("DEBUG: found config at %q\n", path)
 			return path, nil
 		}
 
@@ -40,11 +35,11 @@ func findConfigFile(dir string) (string, error) {
 			return "", fmt.Errorf("unexpected error type: %T %w", err, err)
 		}
 
-		if filepath.Dir(dir) == dir {
+		if filepath.Dir(curDir) == curDir {
 			return "", errNoConfigFileFound
 		}
 
-		dir = filepath.Dir(dir)
+		curDir = filepath.Dir(curDir)
 	}
 }
 
@@ -71,12 +66,7 @@ func parseConfig(r io.Reader) (syncConfig, error) {
 	return cfg, nil
 }
 
-func parseConfigFromFoundFile() (syncConfig, error) {
-	path, err := findConfigFile("")
-	if err != nil {
-		return syncConfig{}, err
-	}
-
+func parseConfigFromFile(path string) (syncConfig, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return syncConfig{}, err

@@ -9,42 +9,28 @@ import (
 	"strings"
 )
 
-// git branch --show-current
-
-// git rev-parse --absolute-git-dir
-
-type LocalRepo struct {
-	root string
-}
-
 var ErrNotRepoRoot = fmt.Errorf("not the repo root")
 
-func NewLocalRepoAtDir(dir string) (*LocalRepo, error) {
-	var repo LocalRepo
-	repo.root = dir
-
+func IsLocalRepoRoot(dir string) (bool, error) {
 	cmd := exec.Command("git", "rev-parse", "--absolute-git-dir")
-	cmd.Dir = repo.root
+	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, err
+		return false, err
 	}
 
 	expected, err := filepath.Abs(filepath.Join(dir, ".git"))
 	if err != nil {
-		return nil, err
+		return false, err
 	}
 
 	actual := strings.TrimSpace(string(out))
-	if expected != actual {
-		return nil, fmt.Errorf("%w: expected=%q actual=%q", ErrNotRepoRoot, expected, actual)
-	}
 
-	return &repo, nil
+	return expected == actual, nil
 }
 
-func (repo *LocalRepo) Root() string {
-	return repo.root
+type LocalRepo struct {
+	Root string
 }
 
 // TODO needed?
@@ -52,7 +38,7 @@ func (repo *LocalRepo) Root() string {
 func (repo *LocalRepo) CurrentBranch() (string, error) {
 	// if repo.currentBranch == nil {
 	cmd := exec.Command("git", "branch", "--show-current")
-	cmd.Dir = repo.root
+	cmd.Dir = repo.Root
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", err
@@ -62,7 +48,7 @@ func (repo *LocalRepo) CurrentBranch() (string, error) {
 	// branch := strings.TrimSpace(string(out))
 	// repo.currentBranch = &branch
 	// } else {
-	// fmt.Printf("===> CurrentBranch cached for %s\n", repo.root)
+	// fmt.Printf("===> CurrentBranch cached for %s\n", repo.Root)
 	// }
 
 	// return *repo.currentBranch, nil
@@ -76,14 +62,14 @@ func (repo *LocalRepo) CurrentBranch() (string, error) {
 // 			return "", err
 // 		}
 
-// 		name, err := getUpstreamRemoteName(repo.root, branch)
+// 		name, err := getUpstreamRemoteName(repo.Root, branch)
 // 		if err != nil {
 // 			return "", err
 // 		}
 
 // 		repo.currentUpstreamRemoteName = &name
 // 	} else {
-// 		fmt.Printf("===> CurrentUpstreamRemoteName cached for %s\n", repo.root)
+// 		fmt.Printf("===> CurrentUpstreamRemoteName cached for %s\n", repo.Root)
 // 	}
 
 // 	return *repo.currentUpstreamRemoteName, nil
@@ -111,7 +97,7 @@ type LocalRepoRemoteURLs struct {
 func (repo *LocalRepo) Remotes() (LocalRepoRemotes, error) {
 	// if repo.allRemotes == nil {
 	cmd := exec.Command("git", "remote", "--verbose")
-	cmd.Dir = repo.root
+	cmd.Dir = repo.Root
 	// fmt.Printf("DEBUG: %v\n", cmd.Args)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -147,7 +133,7 @@ func (repo *LocalRepo) Remotes() (LocalRepoRemotes, error) {
 	return remotes, nil
 	// repo.allRemotes = &remotes
 	// } else {
-	// 	fmt.Printf("===> Remotes cached for %s\n", repo.root)
+	// 	fmt.Printf("===> Remotes cached for %s\n", repo.Root)
 	// }
 
 	// return *repo.allRemotes, nil
@@ -163,7 +149,7 @@ type LocalRepoBranch struct {
 func (repo *LocalRepo) LocalBranches() (branches LocalRepoBranches, current string, err error) {
 	cmd := exec.Command("git", "branch", "--list",
 		"--format", "%(refname:short)\t%(HEAD)\t%(upstream:short)\t%(upstream:track,nobracket)")
-	cmd.Dir = repo.root
+	cmd.Dir = repo.Root
 	// fmt.Printf("DEBUG: %v\n", cmd.Args)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -200,7 +186,7 @@ func (repo *LocalRepo) DeleteBranch(branch string, force bool) error {
 	cmd.Args = append(cmd.Args, branch)
 	// fmt.Printf("DEBUG: %v\n", cmd.Args)
 
-	cmd.Dir = repo.root
+	cmd.Dir = repo.Root
 	_, err := cmd.CombinedOutput()
 	return err
 }
@@ -208,7 +194,7 @@ func (repo *LocalRepo) DeleteBranch(branch string, force bool) error {
 func (repo *LocalRepo) FastForwardMerge() error {
 	cmd := exec.Command("git", "merge", "--ff-only")
 	// fmt.Printf("DEBUG: %v\n", cmd.Args)
-	cmd.Dir = repo.root
+	cmd.Dir = repo.Root
 	_, err := cmd.CombinedOutput()
 	return err
 }
@@ -216,7 +202,7 @@ func (repo *LocalRepo) FastForwardMerge() error {
 func (repo *LocalRepo) FetchAllAndPrune() (updated bool, err error) {
 	cmd := exec.Command("git", "fetch", "--prune", "--all")
 	// fmt.Printf("DEBUG: %v\n", cmd.Args)
-	cmd.Dir = repo.root
+	cmd.Dir = repo.Root
 	var out []byte
 	out, err = cmd.CombinedOutput()
 	if err != nil {
@@ -237,7 +223,7 @@ func (repo *LocalRepo) FetchAllAndPrune() (updated bool, err error) {
 func (repo *LocalRepo) ResetBranch(branch, startPoint string) error {
 	cmd := exec.Command("git", "branch", "--force", branch, startPoint)
 	// fmt.Printf("DEBUG: %v\n", cmd.Args)
-	cmd.Dir = repo.root
+	cmd.Dir = repo.Root
 	_, err := cmd.CombinedOutput()
 	return err
 }
@@ -245,7 +231,7 @@ func (repo *LocalRepo) ResetBranch(branch, startPoint string) error {
 func (repo *LocalRepo) SwitchToExistingBranch(branch string) error {
 	cmd := exec.Command("git", "switch", "--no-guess", branch)
 	// fmt.Printf("DEBUG: %v\n", cmd.Args)
-	cmd.Dir = repo.root
+	cmd.Dir = repo.Root
 	_, err := cmd.CombinedOutput()
 	return err
 }
@@ -253,7 +239,7 @@ func (repo *LocalRepo) SwitchToExistingBranch(branch string) error {
 func (repo *LocalRepo) SwitchToNewTrackingBranch(upstream string) error {
 	cmd := exec.Command("git", "switch", "--track", upstream)
 	// fmt.Printf("DEBUG: %v\n", cmd.Args)
-	cmd.Dir = repo.root
+	cmd.Dir = repo.Root
 	_, err := cmd.CombinedOutput()
 	return err
 }

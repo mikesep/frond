@@ -1,12 +1,21 @@
 package git
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 )
 
-func FindReposInDir(root string) ([]*LocalRepo, error) {
-	var repos []*LocalRepo
+func FindReposInDir(root string) ([]string, error) {
+	isRepoRoot, err := IsLocalRepoRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	if isRepoRoot {
+		return []string{root}, nil
+	}
+
+	var repos []string
 
 	dirQueue := []string{root}
 
@@ -16,24 +25,31 @@ func FindReposInDir(root string) ([]*LocalRepo, error) {
 
 		dir, err := os.Open(dirPath)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%s: %w", dirPath, err)
 		}
 
 		dirInfos, err := dir.Readdir(0)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%s: %w", dirPath, err)
 		}
 
 		for _, fi := range dirInfos {
-			if fi.IsDir() {
-				fiPath := filepath.Join(dirPath, fi.Name())
-				repo, err := NewLocalRepoAtDir(fiPath)
-				if err == nil {
-					repos = append(repos, repo)
-				} else {
-					dirQueue = append(dirQueue, fiPath)
-				}
+			if !fi.IsDir() {
+				continue
 			}
+
+			path := filepath.Join(dirPath, fi.Name())
+			isRepoRoot, err := IsLocalRepoRoot(path)
+			if err != nil {
+				return nil, err
+			}
+
+			if !isRepoRoot {
+				dirQueue = append(dirQueue, path)
+				continue
+			}
+
+			repos = append(repos, path)
 		}
 	}
 

@@ -22,7 +22,7 @@ func (grp *syncConfigTests) Decode_single_org(t *testgroup.T) {
 	cfg, err := parseConfig(strings.NewReader(`
 github:
   server: github.com
-  owner: bloomberg
+  org: bloomberg
 `))
 
 	t.Require.NoError(err)
@@ -31,14 +31,14 @@ github:
 	gh := cfg.GitHub
 
 	t.Equal("github.com", gh.Server)
-	t.Equal("bloomberg", gh.SingleOwner)
+	t.Equal("bloomberg", gh.SingleOrg)
 }
 
 func (grp *syncConfigTests) Decode_orgs_with_global_criteria(t *testgroup.T) {
 	cfg, err := parseConfig(strings.NewReader(`
 github:
   server: github.com
-  owners:
+  orgs:
     apache:
     bloomberg:
     containers:
@@ -55,9 +55,9 @@ github:
 
 	t.Equal("github.com", gh.Server)
 
-	t.Contains(gh.Owners, "apache")
-	t.Contains(gh.Owners, "bloomberg")
-	t.Contains(gh.Owners, "containers")
+	t.Contains(gh.Orgs, "apache")
+	t.Contains(gh.Orgs, "bloomberg")
+	t.Contains(gh.Orgs, "containers")
 
 	t.Empty(gh.Names)
 
@@ -82,7 +82,7 @@ func (grp *syncConfigTests) Decode_org_with_criteria(t *testgroup.T) {
 	cfg, err := parseConfig(strings.NewReader(`
 github:
   server: github.com
-  owners:
+  orgs:
     apache:
       languages: [java]
       archived: false
@@ -97,9 +97,9 @@ github:
 
 	t.Equal("github.com", gh.Server)
 
-	t.Len(gh.Owners, 1)
-	t.Require.Contains(gh.Owners, "apache")
-	apache := gh.Owners["apache"]
+	t.Len(gh.Orgs, 1)
+	t.Require.Contains(gh.Orgs, "apache")
+	apache := gh.Orgs["apache"]
 	t.Require.NotNil(apache)
 
 	t.Equal(&falseVar, apache.Archived)

@@ -36,10 +36,7 @@ func syncRepo(repoPath, defaultTrackingBranch string) actionEvent {
 		}
 	}
 
-	repo, err := git.NewLocalRepoAtDir(repoPath)
-	if err != nil {
-		return failure(err)
-	}
+	repo := git.LocalRepo{Root: repoPath}
 
 	origBranches, currentBranch, err := repo.LocalBranches()
 	if err != nil {
