@@ -164,10 +164,10 @@ func buildActionList(workDir string, cmdArgs []string, console io.Writer) ([]syn
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("DEBUG: localRepos:\n")
-	for i, r := range localRepos {
-		fmt.Printf("%d: %v\n", i, r)
-	}
+	// fmt.Printf("DEBUG: localRepos:\n")
+	// for i, r := range localRepos {
+	// 	fmt.Printf("%d: %v\n", i, r)
+	// }
 
 	idealRepos := idealRepoMap{}
 	rejectionReasons := rejectionReasonMap{}
@@ -179,10 +179,10 @@ func buildActionList(workDir string, cmdArgs []string, console io.Writer) ([]syn
 			return nil, err
 		}
 	}
-	fmt.Printf("DEBUG: idealRepos:\n")
-	for k, v := range idealRepos {
-		fmt.Printf("%v: %v\n", k, v)
-	}
+	// fmt.Printf("DEBUG: idealRepos:\n")
+	// for k, v := range idealRepos {
+	// 	fmt.Printf("%v: %v\n", k, v)
+	// }
 
 	var actions []syncAction
 
