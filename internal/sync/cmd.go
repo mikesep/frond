@@ -246,6 +246,10 @@ func findRelativeLocalRepos(syncRoot, workDir string, cmdArgs []string, console 
 
 	fmt.Fprintf(console, "Finding local repositories... ")
 	for _, t := range absTargets {
+		if _, err := os.Stat(t); os.IsNotExist(err) {
+			continue
+		}
+
 		repos, err := git.FindReposInDir(t)
 		if err != nil {
 			fmt.Fprintf(console, "FAILED!\n")
