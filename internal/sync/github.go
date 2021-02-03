@@ -128,7 +128,15 @@ func (cfg gitHubConfig) pathForRepo(owner, repo string) string {
 }
 
 func (cfg gitHubConfig) filterRepo(repo github.Repo) string {
-	ownerCriteria := cfg.Orgs[repo.Owner.Login]
+	var ownerCriteria *gitHubConfigCriteriaWithExclusions
+	switch repo.Owner.Type {
+	case "Organization":
+		ownerCriteria = cfg.Orgs[repo.Owner.Login]
+	case "User":
+		ownerCriteria = cfg.Users[repo.Owner.Login]
+	default:
+		panic(fmt.Sprintf("unexpected repo.Owner.Type! repo = %#v", repo))
+	}
 
 	names := cfg.Names
 	if ownerCriteria != nil && len(ownerCriteria.Names) > 0 {
