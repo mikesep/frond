@@ -1,6 +1,8 @@
 package sync
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -77,16 +79,33 @@ func parseConfigFromFile(path string) (syncConfig, error) {
 }
 
 func writeConfig(cfg syncConfig) error {
+	var buf bytes.Buffer
+
+	enc := yaml.NewEncoder(&buf)
+	if err := enc.Encode(cfg); err != nil {
+		return err
+	}
+	if err := enc.Close(); err != nil {
+		return err
+	}
+
 	file, err := os.Create(syncConfigFile)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 
-	enc := yaml.NewEncoder(file)
-	defer enc.Close()
+	scanner := bufio.NewScanner(&buf)
+	nullKeySuffix := []byte(": null")
+	for scanner.Scan() {
+		if bytes.HasSuffix(scanner.Bytes(), nullKeySuffix) {
+			fmt.Fprintf(file, "%s:\n", scanner.Bytes()[:len(scanner.Bytes())-len(nullKeySuffix)])
+			continue
+		}
 
-	return enc.Encode(cfg)
+		fmt.Fprintf(file, "%s\n", scanner.Bytes())
+	}
+	return scanner.Err()
 }
 
 //------------------------------------------------------------------------------

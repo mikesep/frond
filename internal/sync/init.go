@@ -59,7 +59,12 @@ func (opts *InitOptions) Execute(args []string) error {
 		return fmt.Errorf("unrecognized server type for %q", server)
 	}
 
-	return writeConfig(cfg)
+	if err := writeConfig(cfg); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+
+	fmt.Printf("Wrote %s\n", syncConfigFile)
+	return nil
 }
 
 type gitHubInitOptions struct {
