@@ -11,7 +11,7 @@ import (
 	"github.com/mikesep/frond/internal/github"
 )
 
-const defaultOwnerPrefixSeparator = "__"
+const defaultAccountPrefixSeparator = "__"
 
 type gitHubConfig struct {
 	Server string `yaml:"server"`
@@ -24,8 +24,8 @@ type gitHubConfig struct {
 
 	gitHubConfigCriteriaWithExclusions `yaml:",inline"`
 
-	SingleDirForAllRepos *bool   `yaml:"singleDirForAllRepos,omitempty"`
-	OwnerPrefixSeparator *string `yaml:"ownerPrefixSeparator,omitempty"`
+	SingleDirForAllRepos   *bool   `yaml:"singleDirForAllRepos,omitempty"`
+	AccountPrefixSeparator *string `yaml:"accountPrefixSeparator,omitempty"`
 }
 
 type gitHubConfigCriteriaWithExclusions struct {
@@ -52,8 +52,8 @@ func (cfg gitHubConfig) pathToOrgUserRepo(pathInsideRoot string) (org, user, rep
 		panic("empty pathInsideRoot")
 	}
 
-	singleOwner := cfg.SingleOrg + cfg.SingleUser
-	singleDir := singleOwner != ""
+	singleAccount := cfg.SingleOrg + cfg.SingleUser
+	singleDir := singleAccount != ""
 	if cfg.SingleDirForAllRepos != nil {
 		singleDir = *cfg.SingleDirForAllRepos
 	}
@@ -62,18 +62,18 @@ func (cfg gitHubConfig) pathToOrgUserRepo(pathInsideRoot string) (org, user, rep
 
 	if singleDir {
 		var prefixSeparator string
-		if singleOwner == "" {
-			prefixSeparator = defaultOwnerPrefixSeparator
+		if singleAccount == "" {
+			prefixSeparator = defaultAccountPrefixSeparator
 		}
-		if cfg.OwnerPrefixSeparator != nil {
-			prefixSeparator = *cfg.OwnerPrefixSeparator
+		if cfg.AccountPrefixSeparator != nil {
+			prefixSeparator = *cfg.AccountPrefixSeparator
 		}
 
 		if prefixSeparator != "" {
 			return "", "", strings.Replace(parts[0], prefixSeparator, "/", 1)
 		}
 
-		return "", "", fmt.Sprintf("%s/%s", singleOwner, parts[0])
+		return "", "", fmt.Sprintf("%s/%s", singleAccount, parts[0])
 	}
 
 	if len(parts) > 1 {
@@ -92,63 +92,63 @@ func (cfg gitHubConfig) pathToOrgUserRepo(pathInsideRoot string) (org, user, rep
 }
 
 // TODO revisit to simplify?
-func (cfg gitHubConfig) pathForRepo(owner, repo string) string {
+func (cfg gitHubConfig) pathForRepo(account, repo string) string {
 
 	if cfg.SingleOrg != "" {
 		if cfg.SingleDirForAllRepos != nil && !*cfg.SingleDirForAllRepos {
-			if cfg.OwnerPrefixSeparator != nil {
+			if cfg.AccountPrefixSeparator != nil {
 				return filepath.Join(
-					owner, fmt.Sprintf("%s%s%s", owner, *cfg.OwnerPrefixSeparator, repo))
+					account, fmt.Sprintf("%s%s%s", account, *cfg.AccountPrefixSeparator, repo))
 			}
 
-			return filepath.Join(owner, repo)
+			return filepath.Join(account, repo)
 		}
 
-		if cfg.OwnerPrefixSeparator != nil {
-			return fmt.Sprintf("%s%s%s", owner, *cfg.OwnerPrefixSeparator, repo)
+		if cfg.AccountPrefixSeparator != nil {
+			return fmt.Sprintf("%s%s%s", account, *cfg.AccountPrefixSeparator, repo)
 		}
 
 		return repo
 	}
 
 	if cfg.SingleDirForAllRepos != nil && *cfg.SingleDirForAllRepos {
-		if cfg.OwnerPrefixSeparator != nil {
-			return fmt.Sprintf("%s%s%s", owner, *cfg.OwnerPrefixSeparator, repo)
+		if cfg.AccountPrefixSeparator != nil {
+			return fmt.Sprintf("%s%s%s", account, *cfg.AccountPrefixSeparator, repo)
 		}
 
-		return fmt.Sprintf("%s%s%s", owner, defaultOwnerPrefixSeparator, repo)
+		return fmt.Sprintf("%s%s%s", account, defaultAccountPrefixSeparator, repo)
 	}
 
-	if cfg.OwnerPrefixSeparator != nil {
+	if cfg.AccountPrefixSeparator != nil {
 		return filepath.Join(
-			owner, fmt.Sprintf("%s%s%s", owner, *cfg.OwnerPrefixSeparator, repo))
+			account, fmt.Sprintf("%s%s%s", account, *cfg.AccountPrefixSeparator, repo))
 	}
 
-	return filepath.Join(owner, repo)
+	return filepath.Join(account, repo)
 }
 
 func (cfg gitHubConfig) filterRepo(repo github.Repo) string {
-	var ownerCriteria *gitHubConfigCriteriaWithExclusions
-	switch repo.Owner.Type {
+	var accountCriteria *gitHubConfigCriteriaWithExclusions
+	switch repo.Account.Type {
 	case "Organization":
-		ownerCriteria = cfg.Orgs[repo.Owner.Login]
+		accountCriteria = cfg.Orgs[repo.Account.Login]
 	case "User":
-		ownerCriteria = cfg.Users[repo.Owner.Login]
+		accountCriteria = cfg.Users[repo.Account.Login]
 	default:
-		panic(fmt.Sprintf("unexpected repo.Owner.Type! repo = %#v", repo))
+		panic(fmt.Sprintf("unexpected repo.Account.Type! repo = %#v", repo))
 	}
 
 	names := cfg.Names
-	if ownerCriteria != nil && len(ownerCriteria.Names) > 0 {
-		names = ownerCriteria.Names
+	if accountCriteria != nil && len(accountCriteria.Names) > 0 {
+		names = accountCriteria.Names
 	}
 	if !matchesAnyFilter(repo.Name, names) {
 		return fmt.Sprintf("%s doesn't match any name in %v", repo.Name, names)
 	}
 
 	topics := cfg.Topics
-	if ownerCriteria != nil && len(ownerCriteria.Topics) > 0 {
-		topics = ownerCriteria.Topics
+	if accountCriteria != nil && len(accountCriteria.Topics) > 0 {
+		topics = accountCriteria.Topics
 	}
 	if !anyWordMatchesAnyFilter(repo.Topics, topics) {
 		return fmt.Sprintf("none of the repo topics %v match any config topic %v",
@@ -156,16 +156,16 @@ func (cfg gitHubConfig) filterRepo(repo github.Repo) string {
 	}
 
 	languages := cfg.Languages
-	if ownerCriteria != nil && len(ownerCriteria.Languages) > 0 {
-		languages = ownerCriteria.Languages
+	if accountCriteria != nil && len(accountCriteria.Languages) > 0 {
+		languages = accountCriteria.Languages
 	}
 	if !matchesAnyFilter(repo.Language, languages) {
 		return fmt.Sprintf("%s doesn't match any language in %v", repo.Language, languages)
 	}
 
 	archived := cfg.Archived
-	if ownerCriteria != nil && ownerCriteria.Archived != nil {
-		archived = ownerCriteria.Archived
+	if accountCriteria != nil && accountCriteria.Archived != nil {
+		archived = accountCriteria.Archived
 	}
 	if archived != nil && repo.Archived != *archived {
 		isOrIsNot := "is"
@@ -176,8 +176,8 @@ func (cfg gitHubConfig) filterRepo(repo github.Repo) string {
 	}
 
 	fork := cfg.Fork
-	if ownerCriteria != nil && ownerCriteria.Fork != nil {
-		fork = ownerCriteria.Fork
+	if accountCriteria != nil && accountCriteria.Fork != nil {
+		fork = accountCriteria.Fork
 	}
 	if fork != nil && repo.Fork != *fork {
 		isOrIsNot := "is"
@@ -188,8 +188,8 @@ func (cfg gitHubConfig) filterRepo(repo github.Repo) string {
 	}
 
 	isTemplate := cfg.IsTemplate
-	if ownerCriteria != nil && ownerCriteria.IsTemplate != nil {
-		isTemplate = ownerCriteria.IsTemplate
+	if accountCriteria != nil && accountCriteria.IsTemplate != nil {
+		isTemplate = accountCriteria.IsTemplate
 	}
 	if isTemplate != nil && repo.IsTemplate != *isTemplate {
 		isOrIsNot := "is"
@@ -200,8 +200,8 @@ func (cfg gitHubConfig) filterRepo(repo github.Repo) string {
 	}
 
 	private := cfg.Private
-	if ownerCriteria != nil && ownerCriteria.Private != nil {
-		private = ownerCriteria.Private
+	if accountCriteria != nil && accountCriteria.Private != nil {
+		private = accountCriteria.Private
 	}
 	if private != nil && repo.Private != *private {
 		isOrIsNot := "is"
@@ -242,7 +242,7 @@ func findGitHubRepos(
 	for _, orgName := range orgs {
 		fmt.Fprintf(console, "Finding repositories in %s/%s..", cfg.Server, orgName)
 		rr, err := ghSAT.ListRepos(ctx, console,
-			github.RepoOwner{Login: orgName, Type: "Organization"},
+			github.Account{Login: orgName, Type: "Organization"},
 			github.AllRepos)
 		if err != nil {
 			fmt.Fprintf(console, " FAILED!\n")
@@ -256,7 +256,7 @@ func findGitHubRepos(
 	for _, userName := range users {
 		fmt.Fprintf(console, "Finding repositories in %s/%s..", cfg.Server, userName)
 		rr, err := ghSAT.ListRepos(ctx, console,
-			github.RepoOwner{Login: userName, Type: "User"},
+			github.Account{Login: userName, Type: "User"},
 			github.AllRepos)
 		if err != nil {
 			fmt.Fprintf(console, " FAILED!\n")
@@ -300,7 +300,7 @@ func findGitHubRepos(
 		}
 
 		pathToRepo, err := filepath.Rel(workDir,
-			filepath.Join(syncRoot, cfg.pathForRepo(r.Owner.Login, r.Name)))
+			filepath.Join(syncRoot, cfg.pathForRepo(r.Account.Login, r.Name)))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -397,8 +397,8 @@ func cmdlineToGitHubOrgsUsersRepos(syncRoot, workDir string, cmdArgs []string, c
 	}
 
 	for repo := range reposSet {
-		owner := strings.SplitN(repo, string(filepath.Separator), 2)[0]
-		if !orgsSet[owner] && !usersSet[owner] {
+		account := strings.SplitN(repo, string(filepath.Separator), 2)[0]
+		if !orgsSet[account] && !usersSet[account] {
 			repos = append(repos, repo)
 		}
 	}

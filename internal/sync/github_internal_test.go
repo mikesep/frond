@@ -76,7 +76,7 @@ func Test_pathToOrgUserRepo(t *testing.T) {
 	}
 
 	customSeparator := "-->"
-	multiCfg.OwnerPrefixSeparator = &customSeparator
+	multiCfg.AccountPrefixSeparator = &customSeparator
 
 	for i, c := range []testcase{
 		{
@@ -114,7 +114,7 @@ func Test_pathToOrgUserRepo(t *testing.T) {
 		})
 	}
 
-	singleOrgCfg.OwnerPrefixSeparator = &customSeparator
+	singleOrgCfg.AccountPrefixSeparator = &customSeparator
 	for i, c := range []testcase{
 		{
 			path:         fmt.Sprintf("golang%srepo", customSeparator),

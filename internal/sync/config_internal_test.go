@@ -70,7 +70,7 @@ github:
 	t.Nil(gh.Private)
 
 	t.Nil(gh.SingleDirForAllRepos)
-	t.Nil(gh.OwnerPrefixSeparator)
+	t.Nil(gh.AccountPrefixSeparator)
 
 	t.Require.NotNil(gh.Exclude)
 	t.Contains(gh.Exclude.Names, "airflow")

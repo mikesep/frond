@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -21,10 +22,10 @@ func (sat *ServerAndToken) restV3URL() string {
 //------------------------------------------------------------------------------
 
 type Repo struct {
-	Name     string    `json:"name"`
-	FullName string    `json:"full_name"`
-	Owner    RepoOwner `json:"owner"`
-	CloneURL string    `json:"clone_url"`
+	Name     string  `json:"name"`
+	FullName string  `json:"full_name"`
+	Account  Account `json:"owner"`
+	CloneURL string  `json:"clone_url"`
 
 	Archived      bool     `json:"archived"`
 	DefaultBranch string   `json:"default_branch"`
@@ -35,7 +36,7 @@ type Repo struct {
 	Topics        []string `json:"topics"`
 }
 
-type RepoOwner struct {
+type Account struct {
 	Login string `json:"login"`
 	Type  string `json:"type"` // User or Organization
 }
@@ -55,14 +56,14 @@ const (
 type RepoFilterFunc func(r Repo) bool
 
 func (sat ServerAndToken) GetRepo(ctx context.Context, fullName string) (Repo, error) {
-	apiURL := fmt.Sprintf("%s/repos/%s", sat.restV3URL(), fullName)
+	apiURL := fmt.Sprintf("%s/repos/%s", sat.restV3URL(), url.PathEscape(fullName))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return Repo{}, err
 	}
 
-	req.Header.Set("Authorization", "bearer "+sat.Token)
+	req.Header.Set("Authorization", "token "+sat.Token)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
 	resp, err := http.DefaultClient.Do(req)
@@ -89,7 +90,7 @@ func (sat ServerAndToken) GetRepo(ctx context.Context, fullName string) (Repo, e
 }
 
 func (sat ServerAndToken) ListRepos(
-	ctx context.Context, progress io.Writer, owner RepoOwner, repoType RepoType,
+	ctx context.Context, progress io.Writer, owner Account, repoType RepoType,
 ) ([]Repo, error) {
 	var results []Repo
 
@@ -109,7 +110,7 @@ func (sat ServerAndToken) ListRepos(
 			return results, err
 		}
 
-		req.Header.Set("Authorization", "bearer "+sat.Token)
+		req.Header.Set("Authorization", "token "+sat.Token)
 		req.Header.Set("Accept", "application/vnd.github.v3+json")
 
 		resp, err := http.DefaultClient.Do(req)
@@ -139,6 +140,45 @@ func (sat ServerAndToken) ListRepos(
 
 	return results, nil
 }
+
+func (sat ServerAndToken) GetAccount(ctx context.Context, name string) (Account, error) {
+	var acct Account
+
+	queryURL := fmt.Sprintf("%s/users/%s", sat.restV3URL(), url.PathEscape(name))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, queryURL, nil)
+	if err != nil {
+		return acct, err
+	}
+
+	req.Header.Set("Authorization", "token "+sat.Token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return acct, err
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		// yay!
+	case http.StatusNotFound:
+		return acct, fmt.Errorf("failed to find account %q", name)
+	default:
+		return acct, fmt.Errorf("bad status code: %v", resp.StatusCode)
+	}
+
+	respBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return acct, err
+	}
+
+	err = json.Unmarshal(respBytes, &acct)
+	return acct, err
+}
+
+//------------------------------------------------------------------------------
 
 func getRelFromLinkHeader(header, page string) string {
 	if header == "" {

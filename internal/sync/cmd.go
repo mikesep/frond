@@ -19,7 +19,7 @@ import (
 )
 
 type Options struct {
-	Init InitOptions `command:"init"`
+	Init InitOptions `command:"init" description:"Create a sync config."`
 
 	DryRun    bool `short:"n" long:"dry-run" description:"Print actions instead of doing them."`
 	Jobs      *int `short:"j" long:"jobs" value-name:"N" description:"Run up to N actions in parallel. (default: NumCPU)"`
