@@ -90,17 +90,17 @@ func (sat ServerAndToken) GetRepo(ctx context.Context, fullName string) (Repo, e
 }
 
 func (sat ServerAndToken) ListRepos(
-	ctx context.Context, progress io.Writer, owner Account, repoType RepoType,
+	ctx context.Context, progress io.Writer, account Account, repoType RepoType,
 ) ([]Repo, error) {
 	var results []Repo
 
 	orgsOrUsers := "orgs"
-	if owner.Type == "User" {
+	if account.Type == "User" {
 		orgsOrUsers = "users"
 	}
 
 	nextURL := fmt.Sprintf("%s/%s/%s/repos?type=%s&per_page=100&sort=full_name",
-		sat.restV3URL(), orgsOrUsers, owner.Login, repoType)
+		sat.restV3URL(), orgsOrUsers, account.Login, repoType)
 
 	for nextURL != "" {
 		fmt.Fprint(progress, ".") // print a dot for each iteration
