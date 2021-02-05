@@ -47,6 +47,36 @@ type gitHubConfigCriteria struct {
 
 //------------------------------------------------------------------------------
 
+func (cfg gitHubConfig) validate() error {
+	if cfg.Server == "" {
+		return fmt.Errorf("server is missing")
+	}
+
+	if cfg.SingleOrg != "" {
+		switch {
+		case len(cfg.Orgs) != 0:
+			return fmt.Errorf("cannot have org and orgs")
+		case cfg.SingleUser != "":
+			return fmt.Errorf("cannot have org and user")
+		case len(cfg.Users) != 0:
+			return fmt.Errorf("cannot have org and users")
+		}
+	}
+
+	if cfg.SingleUser != "" {
+		switch {
+		case cfg.SingleOrg != "":
+			return fmt.Errorf("cannot have user and org")
+		case len(cfg.Orgs) != 0:
+			return fmt.Errorf("cannot have user and orgs")
+		case len(cfg.Users) != 0:
+			return fmt.Errorf("cannot have user and users")
+		}
+	}
+
+	return nil
+}
+
 func (cfg gitHubConfig) pathToOrgUserRepo(pathInsideRoot string) (org, user, repo string) {
 	if pathInsideRoot == "" {
 		panic("empty pathInsideRoot")

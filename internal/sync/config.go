@@ -92,7 +92,9 @@ func writeConfig(cfg syncConfig) error {
 //------------------------------------------------------------------------------
 
 func validateConfig(cfg syncConfig) error {
-	// TODO owner or owners but not both
-	// server required
-	return nil
+	if cfg.GitHub != nil {
+		return cfg.GitHub.validate()
+	}
+
+	return fmt.Errorf("empty config")
 }
