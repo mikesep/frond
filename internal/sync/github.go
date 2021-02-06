@@ -82,13 +82,74 @@ func (cfg gitHubConfig) pathToOrgUserRepo(pathInsideRoot string) (org, user, rep
 		panic("empty pathInsideRoot")
 	}
 
-	singleAccount := cfg.SingleOrg + cfg.SingleUser
-	singleDir := singleAccount != ""
+	singleAccount := (cfg.SingleOrg + cfg.SingleUser) != ""
+	singleDir := singleAccount
 	if cfg.SingleDirForAllRepos != nil {
 		singleDir = *cfg.SingleDirForAllRepos
 	}
 
 	parts := strings.SplitN(pathInsideRoot, string(filepath.Separator), 3)
+
+	if singleDir {
+		var prefixSeparator string
+		if !singleAccount {
+			prefixSeparator = defaultAccountPrefixSeparator
+		}
+		if cfg.AccountPrefixSeparator != nil {
+			prefixSeparator = *cfg.AccountPrefixSeparator
+		}
+
+		if prefixSeparator == "" {
+			return cfg.SingleOrg, cfg.SingleUser, parts[0]
+		}
+
+		separated := strings.SplitN(parts[0], prefixSeparator, 2)
+
+		org, user := cfg.orgOrUser(separated[0])
+		if org == "" && user == "" {
+			return "", "", ""
+		}
+
+		return org, user, separated[1]
+	}
+
+	org, user = cfg.orgOrUser(parts[0])
+	if org == "" && user == "" {
+		return "", "", ""
+	}
+
+	if len(parts) < 2 {
+		return org, user, ""
+	}
+
+	var prefixSeparator string
+	if cfg.AccountPrefixSeparator != nil {
+		prefixSeparator = *cfg.AccountPrefixSeparator
+	}
+
+	if prefixSeparator == "" {
+		return org, user, parts[1]
+	}
+
+	separated := strings.SplitN(parts[1], prefixSeparator, 2)
+	if separated[0] != org+user {
+		panic("strange, dir doesn't match prefix: " + pathInsideRoot)
+	}
+
+	return org, user, separated[1]
+}
+
+// TODO revisit to simplify?
+func (cfg gitHubConfig) pathForRepo(account, repo string) string {
+	if org, user := cfg.orgOrUser(account); org == "" && user == "" {
+		panic(fmt.Sprintf("pathForRepo: account %q is neither an org or user", account))
+	}
+
+	singleAccount := cfg.SingleOrg + cfg.SingleUser
+	singleDir := singleAccount != ""
+	if cfg.SingleDirForAllRepos != nil {
+		singleDir = *cfg.SingleDirForAllRepos
+	}
 
 	if singleDir {
 		var prefixSeparator string
@@ -99,62 +160,19 @@ func (cfg gitHubConfig) pathToOrgUserRepo(pathInsideRoot string) (org, user, rep
 			prefixSeparator = *cfg.AccountPrefixSeparator
 		}
 
-		if prefixSeparator != "" {
-			return "", "", strings.Replace(parts[0], prefixSeparator, "/", 1)
+		if prefixSeparator == "" {
+			return repo
 		}
 
-		return "", "", fmt.Sprintf("%s/%s", singleAccount, parts[0])
+		return fmt.Sprintf("%s%s%s", account, prefixSeparator, repo)
 	}
 
-	if len(parts) > 1 {
-		return "", "", fmt.Sprintf("%s/%s", parts[0], parts[1])
-	}
-
-	if _, ok := cfg.Orgs[parts[0]]; ok || cfg.SingleOrg == parts[0] {
-		return parts[0], "", ""
-	}
-
-	if _, ok := cfg.Users[parts[0]]; ok || cfg.SingleUser == parts[0] {
-		return "", parts[0], ""
-	}
-
-	return "", "", ""
-}
-
-// TODO revisit to simplify?
-func (cfg gitHubConfig) pathForRepo(account, repo string) string {
-
-	if cfg.SingleOrg != "" {
-		if cfg.SingleDirForAllRepos != nil && !*cfg.SingleDirForAllRepos {
-			if cfg.AccountPrefixSeparator != nil {
-				return filepath.Join(
-					account, fmt.Sprintf("%s%s%s", account, *cfg.AccountPrefixSeparator, repo))
-			}
-
-			return filepath.Join(account, repo)
-		}
-
-		if cfg.AccountPrefixSeparator != nil {
-			return fmt.Sprintf("%s%s%s", account, *cfg.AccountPrefixSeparator, repo)
-		}
-
-		return repo
-	}
-
-	if cfg.SingleDirForAllRepos != nil && *cfg.SingleDirForAllRepos {
-		if cfg.AccountPrefixSeparator != nil {
-			return fmt.Sprintf("%s%s%s", account, *cfg.AccountPrefixSeparator, repo)
-		}
-
-		return fmt.Sprintf("%s%s%s", account, defaultAccountPrefixSeparator, repo)
-	}
-
+	repoDir := repo
 	if cfg.AccountPrefixSeparator != nil {
-		return filepath.Join(
-			account, fmt.Sprintf("%s%s%s", account, *cfg.AccountPrefixSeparator, repo))
+		repoDir = fmt.Sprintf("%s%s%s", account, *cfg.AccountPrefixSeparator, repo)
 	}
 
-	return filepath.Join(account, repo)
+	return filepath.Join(account, repoDir)
 }
 
 func (cfg gitHubConfig) filterRepo(repo github.Repo) string {
@@ -242,6 +260,18 @@ func (cfg gitHubConfig) filterRepo(repo github.Repo) string {
 	}
 
 	return ""
+}
+
+func (cfg gitHubConfig) orgOrUser(name string) (org, user string) {
+	if _, ok := cfg.Orgs[name]; ok || cfg.SingleOrg == name {
+		return name, ""
+	}
+
+	if _, ok := cfg.Users[name]; ok || cfg.SingleUser == name {
+		return "", name
+	}
+
+	return "", ""
 }
 
 //------------------------------------------------------------------------------
