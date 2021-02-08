@@ -139,7 +139,6 @@ func (cfg gitHubConfig) pathToOrgUserRepo(pathInsideRoot string) (org, user, rep
 	return org, user, separated[1]
 }
 
-// TODO revisit to simplify?
 func (cfg gitHubConfig) pathForRepo(account, repo string) string {
 	if org, user := cfg.orgOrUser(account); org == "" && user == "" {
 		panic(fmt.Sprintf("pathForRepo: account %q is neither an org or user", account))
