@@ -92,10 +92,12 @@ func syncRepo(repoPath, defaultTrackingBranch string) actionEvent {
 	var caveats []string
 
 	for branch, newInfo := range newBranches {
-		switch strings.Fields(newInfo.UpstreamTrack)[0] {
-		case "":
+		if newInfo.UpstreamTrack == "" {
 			// in sync with upstream
+			continue
+		}
 
+		switch strings.Fields(newInfo.UpstreamTrack)[0] {
 		case "behind":
 			if branch == currentBranch {
 				if err := repo.FastForwardMerge(); err != nil {
