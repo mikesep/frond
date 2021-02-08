@@ -5,28 +5,25 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
-	"path/filepath"
 	"strings"
 )
 
 var ErrNotRepoRoot = fmt.Errorf("not the repo root")
 
 func IsLocalRepoRoot(dir string) (bool, error) {
-	cmd := exec.Command("git", "rev-parse", "--absolute-git-dir")
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return false, err
-	}
-
-	expected, err := filepath.Abs(filepath.Join(dir, ".git"))
-	if err != nil {
+		if bytes.Contains(out, []byte("not a git repository")) {
+			return false, nil
+		}
 		return false, err
 	}
 
 	actual := strings.TrimSpace(string(out))
 
-	return expected == actual, nil
+	return dir == actual, nil
 }
 
 type LocalRepo struct {
