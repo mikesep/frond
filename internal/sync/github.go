@@ -307,7 +307,7 @@ func findGitHubRepos(
 			fmt.Fprintf(console, " FAILED!\n")
 			return nil, nil, err
 		}
-		fmt.Fprintf(console, " done.\n")
+		fmt.Fprintf(console, " found %d.\n", len(rr))
 
 		unfilteredRepos = append(unfilteredRepos, rr...)
 	}
@@ -321,13 +321,13 @@ func findGitHubRepos(
 			fmt.Fprintf(console, " FAILED!\n")
 			return nil, nil, err
 		}
-		fmt.Fprintf(console, " done.\n")
+		fmt.Fprintf(console, " found %d.\n", len(rr))
 
 		unfilteredRepos = append(unfilteredRepos, rr...)
 	}
 
 	if len(individualRepos) > 0 {
-		fmt.Fprintf(console, "Finding individual repositories..")
+		fmt.Fprintf(console, "Checking individual repositories..")
 	}
 	for _, repoName := range individualRepos {
 		fmt.Fprint(console, ".")
@@ -339,7 +339,7 @@ func findGitHubRepos(
 		unfilteredRepos = append(unfilteredRepos, r)
 	}
 	if len(individualRepos) > 0 {
-		fmt.Fprintf(console, " done.\n")
+		fmt.Fprintf(console, " checked %d.\n", len(individualRepos))
 	}
 
 	// filter the repos
@@ -370,6 +370,8 @@ func findGitHubRepos(
 			DefaultBranch: r.DefaultBranch,
 		}
 	}
+
+	fmt.Fprintf(console, "Filtered out %d and kept %d.\n", len(rejectedRepos), len(idealRepos))
 
 	return idealRepos, rejectedRepos, nil
 }

@@ -264,7 +264,7 @@ func findRelativeLocalRepos(syncRoot, workDir string, cmdArgs []string, console 
 			repoSet[rel] = true
 		}
 	}
-	fmt.Fprintf(console, "done.\n")
+	fmt.Fprintf(console, "found %d.\n", len(repoSet))
 
 	repos := make([]string, 0, len(repoSet))
 	for r := range repoSet {
