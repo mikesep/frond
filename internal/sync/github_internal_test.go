@@ -167,7 +167,35 @@ func (grp *manyOrgsAndUsersTests) SingleDirArrow(t *testgroup.T) {
 	}
 }
 
-// TODO dir + prefix + separator + repo
+func (grp *manyOrgsAndUsersTests) ManyDirsWithArrow(t *testgroup.T) {
+	cfg := grp.cfg
+
+	arrow := "-->"
+	cfg.AccountPrefixSeparator = &arrow
+
+	for i, c := range []gitHubPathTestcase{
+		{
+			path: filepath.Join("containers", "containers"+arrow+"repo"),
+			org:  "containers",
+			repo: "repo",
+		},
+		{
+			path: filepath.Join("alice", "alice"+arrow+"repo"),
+			user: "alice",
+			repo: "repo",
+		},
+	} {
+		t.Run(strconv.Itoa(i), func(t *testgroup.T) {
+			org, user, repo := cfg.pathToOrgUserRepo(c.path)
+			t.Equal(c.org, org)
+			t.Equal(c.user, user)
+			t.Equal(c.repo, repo)
+
+			acct := c.org + c.user
+			t.Equal(c.path, cfg.pathForRepo(acct, c.repo))
+		})
+	}
+}
 
 //------------------------------------------------------------------------------
 
