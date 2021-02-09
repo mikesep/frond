@@ -63,6 +63,8 @@ func (opts *InitOptions) Execute(args []string) error {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
+	// TODO write some helpful comments
+
 	fmt.Printf("Wrote %s\n", syncConfigFile)
 	return nil
 }
