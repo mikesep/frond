@@ -174,7 +174,7 @@ func (cfg gitHubConfig) pathForRepo(account, repo string) string {
 	return filepath.Join(account, repoDir)
 }
 
-func (cfg gitHubConfig) filterRepo(repo github.Repo) string {
+func (cfg gitHubConfig) filterRepo(repo github.Repo) (rejectionReason string, err error) {
 	var accountCriteria *gitHubConfigCriteriaWithExclusions
 	switch repo.Account.Type {
 	case "Organization":
@@ -189,25 +189,37 @@ func (cfg gitHubConfig) filterRepo(repo github.Repo) string {
 	if accountCriteria != nil && len(accountCriteria.Names) > 0 {
 		names = accountCriteria.Names
 	}
-	if !matchesAnyFilter(repo.Name, names) {
-		return fmt.Sprintf("%s doesn't match any name in %v", repo.Name, names)
+	matched, err := matchesAnyFilter(repo.Name, names)
+	if err != nil {
+		return "", err
+	}
+	if !matched {
+		return fmt.Sprintf("%s doesn't match any name in %v", repo.Name, names), nil
 	}
 
 	topics := cfg.Topics
 	if accountCriteria != nil && len(accountCriteria.Topics) > 0 {
 		topics = accountCriteria.Topics
 	}
-	if !anyWordMatchesAnyFilter(repo.Topics, topics) {
+	matched, err = anyWordMatchesAnyFilter(repo.Topics, topics)
+	if err != nil {
+		return "", err
+	}
+	if !matched {
 		return fmt.Sprintf("none of the repo topics %v match any config topic %v",
-			repo.Topics, topics)
+			repo.Topics, topics), nil
 	}
 
 	languages := cfg.Languages
 	if accountCriteria != nil && len(accountCriteria.Languages) > 0 {
 		languages = accountCriteria.Languages
 	}
-	if !matchesAnyFilter(repo.Language, languages) {
-		return fmt.Sprintf("%s doesn't match any language in %v", repo.Language, languages)
+	matched, err = matchesAnyFilter(repo.Language, languages)
+	if err != nil {
+		return "", err
+	}
+	if !matched {
+		return fmt.Sprintf("%s doesn't match any language in %v", repo.Language, languages), nil
 	}
 
 	archived := cfg.Archived
@@ -219,7 +231,7 @@ func (cfg gitHubConfig) filterRepo(repo github.Repo) string {
 		if !repo.Archived {
 			isOrIsNot = "is not"
 		}
-		return fmt.Sprintf("repo %s archived", isOrIsNot)
+		return fmt.Sprintf("repo %s archived", isOrIsNot), nil
 	}
 
 	fork := cfg.Fork
@@ -231,7 +243,7 @@ func (cfg gitHubConfig) filterRepo(repo github.Repo) string {
 		if !repo.Fork {
 			isOrIsNot = "is not"
 		}
-		return fmt.Sprintf("repo %s a fork", isOrIsNot)
+		return fmt.Sprintf("repo %s a fork", isOrIsNot), nil
 	}
 
 	isTemplate := cfg.IsTemplate
@@ -243,7 +255,7 @@ func (cfg gitHubConfig) filterRepo(repo github.Repo) string {
 		if !repo.IsTemplate {
 			isOrIsNot = "is not"
 		}
-		return fmt.Sprintf("repo %s a template", isOrIsNot)
+		return fmt.Sprintf("repo %s a template", isOrIsNot), nil
 	}
 
 	private := cfg.Private
@@ -255,10 +267,10 @@ func (cfg gitHubConfig) filterRepo(repo github.Repo) string {
 		if !repo.Private {
 			isOrIsNot = "is not"
 		}
-		return fmt.Sprintf("repo %s private", isOrIsNot)
+		return fmt.Sprintf("repo %s private", isOrIsNot), nil
 	}
 
-	return ""
+	return "", nil
 }
 
 func (cfg gitHubConfig) orgOrUser(name string) (org, user string) {
@@ -353,7 +365,11 @@ func findGitHubRepos(
 			return nil, nil, err
 		}
 
-		if reason := cfg.filterRepo(r); reason != "" {
+		reason, err := cfg.filterRepo(r)
+		if err != nil {
+			return nil, nil, err
+		}
+		if reason != "" {
 			rejectedRepos[compURL] = reason
 			continue
 		}
