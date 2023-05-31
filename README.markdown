@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2020 Michael Seplowitz
+SPDX-License-Identifier: MIT
+-->
+
 # frond :palm_tree:
 
 ## multi-repo actions

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2021 Michael Seplowitz
+// SPDX-License-Identifier: MIT
+
 package sync
 
 import (

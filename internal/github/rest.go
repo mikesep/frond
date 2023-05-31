@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2020 Michael Seplowitz
+// SPDX-License-Identifier: MIT
+
 package github
 
 import (
