@@ -5,6 +5,9 @@ SPDX-License-Identifier: MIT
 
 # frond :palm_tree:
 
+:warning: This is very much a work in progress. Many features described below
+are not implemented yet.
+
 ## multi-repo actions
 
 ### List repo paths
